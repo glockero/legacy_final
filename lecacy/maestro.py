@@ -570,8 +570,46 @@ def obtener_estado_host():
         "disco_usado_gb": round(used / (1024 ** 3), 2),
         "disco_libre_gb": round(free / (1024 ** 3), 2),
         "throttled": throttled,
-        "db_mb": round(os.path.getsize(DB_NAME) / (1024 ** 2), 2) if os.path.exists(DB_NAME) else 0
+        "db_mb": round(os.path.getsize(DB_NAME) / (1024 ** 2), 2) if os.path.exists(DB_NAME) else 0,
+        "server_time": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
+
+@app.route('/api/system_time', methods=['GET', 'POST'])
+def api_system_time():
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    
+    if request.method == 'POST':
+        if rol != 'admin': return "Solo el administrador puede cambiar la hora", 403
+        nueva_fecha = request.form.get('fecha_hora') # Esperado: "YYYY-MM-DD HH:MM:SS"
+        if not nueva_fecha: return "Fecha invalida", 400
+        
+        try:
+            # Intentamos ajustar la hora del sistema (requiere privilegios de sudo)
+            sistema = platform.system().lower()
+            if "linux" in sistema:
+                # Usamos timedatectl para sincronizar tambien el RTC si existe
+                res = subprocess.run(["sudo", "timedatectl", "set-time", nueva_fecha], capture_output=True, text=True)
+                if res.returncode != 0:
+                    # Fallback a date si timedatectl falla
+                    subprocess.run(["sudo", "date", "-s", nueva_fecha], check=True)
+            elif "windows" in sistema:
+                # Fallback para desarrollo en Windows
+                fecha, hora = nueva_fecha.split(" ")
+                subprocess.run(["date", fecha], shell=True)
+                subprocess.run(["time", hora], shell=True)
+            
+            registrar_accion_admin(usr, "SET_TIME", f"Nueva hora: {nueva_fecha}", request.remote_addr)
+            registrar_system_log("SET_TIME", f"Hora del sistema ajustada manualmente por {usr}: {nueva_fecha}")
+            return "Hora actualizada correctamente"
+        except Exception as e:
+            return f"Error al actualizar la hora: {e}", 500
+
+    return jsonify({
+        "server_time": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "timezone": str(time.tzname),
+        "rtc_detected": os.path.exists("/dev/rtc0")
+    })
 
 def registrar_arranque_sistema():
     try:
@@ -793,8 +831,12 @@ def add_extra_credit():
 
 @app.route('/api/host_status')
 def host_status():
-    if check_auth(request)[0] == 'none': return "401", 401
-    return jsonify(obtener_estado_host())
+    rol, _, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    status = obtener_estado_host()
+    status["rol"] = rol
+    status["rtc_detected"] = os.path.exists("/dev/rtc0")
+    return jsonify(status)
 
 @app.route('/api/reboot_host', methods=['POST'])
 def api_reboot_host():

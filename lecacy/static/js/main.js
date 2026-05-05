@@ -17,10 +17,14 @@ window.onload=rT; document.onmousemove=rT; document.onkeypress=rT; document.onsc
 localStorage.setItem('tema_ag', 'claro');
 document.body.classList.remove('dark');
 
+let serverTimeOffset = 0;
+
 function updateLiveClock() {
     const clock = document.getElementById('live-clock');
     if(!clock) return;
-    clock.textContent = liveClockFormatter.format(new Date());
+    const now = new Date();
+    const serverNow = new Date(now.getTime() + serverTimeOffset);
+    clock.textContent = liveClockFormatter.format(serverNow);
 }
 
 function initHeaderSidebar() {
@@ -185,22 +189,44 @@ async function confirmarRebootHost() {
 async function abrirEstadoHost() {
     let r = await fetch('/api/host_status');
     let d = await r.json();
+    let rtcIcon = d.rtc_detected ? '✅ RTC Detectado' : '❌ RTC No detectado';
+    let btnTime = d.rol === 'admin' ? `<button class="btn-info" style="margin-top:10px; width:100%;" onclick="cambiarHoraManual('${d.server_time}')">Ajustar Hora Sistema</button>` : '';
+
     document.getElementById('modal-title').innerText = "Estado Raspberry / Host";
     document.getElementById('modal-content').innerHTML = `
         <div class="dash-grid">
+          <div class="dash-card"><strong>Hora Servidor</strong><span style="color:#2563eb; font-weight:bold;">${d.server_time}</span></div>
+          <div class="dash-card"><strong>RTC Hardware</strong><span>${rtcIcon}</span></div>
           <div class="dash-card"><strong>Host</strong><span>${d.host}</span></div>
           <div class="dash-card"><strong>Sistema</strong><span>${d.sistema}</span></div>
-          <div class="dash-card"><strong>Arquitectura</strong><span>${d.arquitectura}</span></div>
           <div class="dash-card"><strong>Uptime</strong><span>${d.uptime}</span></div>
           <div class="dash-card"><strong>Último boot</strong><span>${d.boot}</span></div>
           <div class="dash-card"><strong>Temperatura</strong><span>${d.temperatura}</span></div>
           <div class="dash-card"><strong>Carga CPU</strong><span>${d.load}</span></div>
           <div class="dash-card"><strong>Disco</strong><span>${d.disco_usado_gb} / ${d.disco_total_gb} GB</span></div>
-          <div class="dash-card"><strong>Libre</strong><span>${d.disco_libre_gb} GB</span></div>
           <div class="dash-card"><strong>DB</strong><span>${d.db_mb} MB</span></div>
           <div class="dash-card"><strong>Throttling</strong><span>${d.throttled}</span></div>
-        </div>`;
+        </div>
+        ${btnTime}`;
     document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+async function cambiarHoraManual(horaActual) {
+    let nueva = prompt("Ingresa la fecha y hora actual (Formato: YYYY-MM-DD HH:MM:SS):", "");
+    if(!nueva) return;
+    
+    // Validacion basica de formato
+    if(!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(nueva)) {
+        return alert("Formato invalido. Debe ser YYYY-MM-DD HH:MM:SS");
+    }
+
+    if(!confirm("Esto cambiara la hora de TODO el sistema Raspberry. ¿Continuar?")) return;
+    
+    let fd = new FormData();
+    fd.append('fecha_hora', nueva);
+    let r = await fetch('/api/system_time', {method:'POST', body:fd});
+    alert(await r.text());
+    if(r.ok) abrirEstadoHost();
 }
 
 async function abrirLogsSistema() {
@@ -728,8 +754,18 @@ async function tick() {
     const r = await fetch('/api/estado');
     if(r.status === 401) return window.location.href='/login';
     const d = await r.json();
-    
+
+    // Sincronizar reloj con el servidor
+    if (d.server_time) {
+        const [fecha, hora] = d.server_time.split(' ');
+        const [dia, mes, anio] = fecha.split('/');
+        const [h, m, s] = hora.split(':');
+        const sTime = new Date(anio, mes - 1, dia, h, m, s).getTime();
+        serverTimeOffset = sTime - new Date().getTime();
+    }
+
     document.getElementById('label-rol').innerText = d.rol;
+
     document.getElementById('label-nombre').innerText = d.nombre_real;
     
     let disp = d.limite_disponible;
