@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div id="tab-control" class="tab-content active">
+    <div class="tarjeta">
+      <div class="title-row">
+        <h2 style="margin:0;">Dashboard Principal</h2>
+        <button class="btn-info" onclick="loadDashboard()">Actualizar</button>
+      </div>
+      <div id="dash-principal" class="dash-grid"></div>
+      <div class="chart-grid">
+        <div class="chart-box">
+          <h3 style="margin-top:0;">Cargas globales</h3>
+          <div id="chart-global"></div>
+        </div>
+      </div>
+    </div>
+    <div class="tarjeta panel-medium">
+      <div class="title-row">
+        <h2 style="margin:0;">Alertas administrativas</h2>
+        <button class="btn-info" onclick="loadAlertas()">Actualizar</button>
+      </div>
+      <div id="dash-alertas" class="alert-grid"></div>
+    </div>
+    <div class="tarjeta" style="max-width: 600px;">
+      <h2>Operaciones Globales</h2><br>
+      <div class="input-group">
+          <input type="text" id="cmd_all" placeholder="Monto a cargar (Ej: 5000)">
+          <button onclick="sendCmd('ALL', 'cmd_all')">Enviar a TODAS Online</button>
+      </div>
+      <div class="input-group" style="margin-top:10px;">
+          <input type="text" id="cmd_multi" placeholder="Monto seleccionados">
+          <button onclick="sendSelectedCredit()">Enviar seleccionados</button>
+          <button class="btn-reboot admin-only" onclick="sendSelectedReset()" style="display:none;">Reset seleccionados</button>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <div class="title-row">
+        <h2 style="margin:0;">MAQUINAS</h2>
+      </div>
+      <div class="table-responsive slots-table">
+        <table>
+          <thead><tr><th style="width: 50px; text-align: right;"></th><th>Slot</th><th>Nombre</th><th>ID / Estado</th><th>Evento</th><th>Acción</th></tr></thead>
+          <tbody id="tabla-esclavos"><tr id="cargando"><td colspan="6">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-auditoria" class="tab-content">
+    <div class="tarjeta audit-container-flex">
+      <!-- Cabecera Fija -->
+      <div class="audit-fixed-header">
+          <h2 style="margin: 0 0 15px 0; color: #1e3a8a; font-weight: 800;">HISTORIAL DE CARGAS</h2>
+          <div class="title-row" style="margin-bottom: 15px;">
+              <div class="audit-toolbar" style="width: 100%; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                  <h3 id="total-auditoria" style="margin: 0; color: #16a34a; background: #f3f4f6; padding: 6px 16px; border-radius: 6px; border: 1px solid #d1d5db; font-size: 1.2rem; font-weight: 700;">Total Filtrado: $0.00</h3>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <button class="btn-download" style="background: #3b82f6; display: flex; align-items: center; gap: 6px;" onclick="descargarAuditoriaFiltrada()">📥 Bajar Excel</button>
+                      <button class="btn-download admin-only" style="background: #3b82f6;" onclick="backupForzado()">Backup</button>
+                      <button class="btn-download admin-only" style="background: #3b82f6;" onclick="window.location.href='/admin_log_excel'">Log admin</button>
+                      <button class="btn-download admin-only" style="background: #3b82f6;" onclick="window.location.href='/system_log_excel'">Log sistema</button>
+                      <button class="btn-quitar admin-only" style="background: #ef4444; display: flex; align-items: center; gap: 6px;" onclick="borrarHistorial()">🗑️ Vaciar DB</button>
+                  </div>
+              </div>
+          </div>
+          <div class="filtros-bar-compact">
+              <label style="font-weight: 800; color: #111;">Filtros:</label>
+              <select id="filtro_rango" onchange="filtrar()">
+                  <option value="">Todo</option>
+                  <option value="1h">Ultima hora</option>
+                  <option value="24h">Ultimas 24hs</option>
+                  <option value="semana">Ultima semana</option>
+                  <option value="mes">Ultimo mes</option>
+              </select>
+              <input type="date" id="filtro_fecha_inicio" onchange="filtrar()">
+              <input type="date" id="filtro_fecha_fin" onchange="filtrar()">
+              <select id="filtro_usuario" onchange="filtrar()"><option value="">Todos</option></select>
+              <select id="filtro_maquina" onchange="filtrar()"><option value="">Todas</option></select>
+              <button onclick="limpiarFiltros()" style="background: #4b5563; color: white;">Limpiar</button>
+          </div>
+      </div>
+
+      <!-- Area de Tabla Scrolleable -->
+      <div class="audit-scroll-area">
+        <div class="table-responsive audit-table" style="margin-top: 0; padding: 0;">
+          <table id="tabla-auditoria-table" class="audit-table-fixed">
+            <thead><tr><th class="resizable">ID</th><th class="resizable">Fecha/Hora</th><th class="resizable">Usuario</th><th class="resizable">Máquina</th><th class="resizable">IP</th><th class="resizable">Monto</th></tr></thead>
+            <tbody id="tabla-auditoria"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Pie de Pagina Fijo -->
+      <div class="audit-footer-fixed">
+          <div class="filtros-bar" style="justify-content:flex-end; margin:0;">
+              <button onclick="pagAud(-1)" style="background:#6c757d;">Anterior</button>
+              <span id="aud-page-info" style="font-weight:bold; margin: 0 15px; align-self: center;">Página 1</span>
+              <button onclick="pagAud(1)" style="background:#6c757d;">Siguiente</button>
+          </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-perfil" class="tab-content">
+    <div class="tarjeta" style="max-width:500px; margin-bottom:20px; margin-left:auto; margin-right:auto;">
+      <h2>Mi Perfil</h2><br>
+      <label>Nombre Real / Descriptivo:</label>
+      <input type="text" id="perfil_nombre" style="width:100%; margin-top:5px;">
+      <button onclick="cambiarNombre()" style="width:100%; margin-top:10px;">Actualizar Nombre</button>
+    </div>
+    <div class="tarjeta" style="max-width:500px; margin-left:auto; margin-right:auto;">
+      <h2>Mi Contraseña</h2><br>
+      <input type="password" id="pass_actual" placeholder="Contraseña Actual" style="width:100%; margin-bottom:10px;">
+      <input type="password" id="pass_nueva" placeholder="Nueva Contraseña" style="width:100%;">
+      <button onclick="cambiarPass()" style="width:100%; margin-top:10px;">Cambiar Contraseña</button>
+    </div>
+  </div>
+
+  <div id="tab-usuarios" class="tab-content">
+    <div class="tarjeta admin-only">
+      <div class="title-row">
+        <h2 style="margin:0;">Límites Predeterminados por Rol</h2>
+        <button class="btn-info" onclick="loadLimitesRol()">Actualizar</button>
+      </div>
+      <div class="table-responsive limites-rol-table">
+        <table>
+          <thead><tr><th>Rol</th><th>Límite Operación</th><th>Límite Diario 24hs</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-limites-rol"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="tarjeta panel-compact">
+      <div class="title-row">
+        <h2 style="margin:0;">Dashboard de cargas por usuario</h2>
+        <select id="usr_dash_rango" onchange="loadUsrDash()">
+          <option value="1h">Última hora</option>
+          <option value="24h">Últimas 24hs</option>
+          <option value="semana">Última semana</option>
+          <option value="mes" selected>Último mes</option>
+        </select>
+      </div>
+      <div id="usuarios-dashboard" class="chart-box"></div>
+    </div>
+    <div class="tarjeta" style="max-width: 1200px;">
+      <h2>Nuevo Usuario</h2><br>
+      <div class="input-group">
+          <input type="text" id="new_usr" placeholder="Login (Ej: andres)">
+          <input type="text" id="new_real" placeholder="Nombre Real">
+          <input type="password" id="new_pass" placeholder="Clave">
+          <select id="new_rol"><option value="operador">Operador</option><option value="supervisor">Supervisor</option><option value="consulta">Consulta</option><option value="admin">Admin</option></select>
+          <input type="number" id="new_max_op" placeholder="Max Operación (0=Sin Límite)" style="min-width: 200px;">
+          <input type="number" id="new_max_dia" placeholder="Max 24hs (0=Sin Límite)" style="min-width: 200px;">
+          <button onclick="crearUsr()">Guardar Usuario</button>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <div class="title-row">
+        <h2 style="margin:0;">USUARIOS</h2>
+      </div>
+      <div class="table-responsive users-table">
+        <table>
+          <thead><tr><th>Login</th><th>Nombre</th><th>Rol</th><th>Límites</th><th>Estado</th><th>Última Carga</th><th>Acciones</th></tr></thead>
+          <tbody id="tabla-usuarios"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endblock %}

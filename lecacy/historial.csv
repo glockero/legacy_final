@@ -1,0 +1,3 @@
+Fecha_Hora,Usuario,ID_Esclavo,IP_Esclavo,Monto_Cargado
+10/04/2026 08:08:45,admin,SLOT_001,192.168.0.40,$500
+10/04/2026 08:31:08,admin,SLOT_001,192.168.0.40,$555

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0056b3">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>LEGACY APP - Control</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+  <div id="modal-overlay">
+    <div id="modal-box">
+      <div class="modal-header">
+        <h3 id="modal-title" style="margin:0; color:#0056b3;">Contadores</h3>
+        <button class="btn-close" onclick="cerrarModal()">X</button>
+      </div>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <div class="header-bar">
+    <div class="header-live-clock" aria-live="polite">
+      <span class="header-live-clock-value" id="live-clock">--/--/---- --:--:--</span>
+    </div>
+    <h1>LEGACY APP <span id="sync-indicator">● Sincronizado</span></h1>
+    <button type="button" class="menu-toggle" id="mobile-toggle" onclick="toggleMenu()" aria-label="Abrir menú" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-info" id="header-info">
+      <div id="header-limits" style="background:#e9ecef; padding:5px 12px; border-radius:8px; margin-right:10px; font-size:14px; border:1px solid #ccc;">
+        Límite disponible: <strong id="header-disponible" style="color:#28a745;">$0.00</strong>
+      </div>
+      <button type="button" id="label-nombre" class="user-shortcut" onclick="openTab('tab-perfil', document.querySelector('[data-tab-target=&quot;tab-perfil&quot;]')); closeMenu();">Cargando...</button>
+      <span id="label-rol" class="badge-rol">...</span>
+      <select id="system-menu" onchange="menuSistema(this.value); this.value='';">
+        <option value="">Sistema</option>
+        <option value="host">Estado Raspberry</option>
+        <option value="logs">Logs de sistema</option>
+        <option value="db">Base de datos</option>
+      </select>
+      <button class="btn-perfil" onclick="openTab('tab-perfil', this); closeMenu();">👤 Perfil</button>
+      <button class="btn-logout" onclick="window.location.href='/logout'">🚪 Salir</button>
+    </div>
+  </div>
+
+
+  <div class="content-wrap">
+    <div class="tab-container">
+      <button class="tab-btn active" onclick="openTab('tab-control', this)">🕹️ Control</button>
+      <button class="tab-btn" onclick="openTab('tab-auditoria', this)">📊 Auditoría</button>
+      <button class="tab-btn admin-only" onclick="openTab('tab-usuarios', this)" style="display:none;">👥 Usuarios</button>
+    </div>
+
+    {% block content %}{% endblock %}
+  </div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

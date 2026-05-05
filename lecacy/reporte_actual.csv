@@ -1,0 +1,6 @@
+Fecha_Hora,Usuario,ID_Maquin,IP,Monto
+10/04/2026 08:57:02,admin,SLOT_001,192.168.0.40,555.0
+10/04/2026 09:22:32,admin,Maquina 0 (SLOT_001),192.168.0.40,555.0
+10/04/2026 09:22:35,admin,Maquina 0 (SLOT_001),192.168.0.40,5.0
+10/04/2026 09:24:16,admin,konami advantage (SLOT_001),192.168.0.40,2345.0
+10/04/2026 09:25:13,test1,konami advantage (SLOT_001),192.168.0.40,9876.0

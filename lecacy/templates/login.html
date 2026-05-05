@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingreso Sistema AG</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #f4f4f9; color: #333; }
+        .login-card { background: white; padding: 40px 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 95%; max-width: 400px; box-sizing: border-box; }
+        h2 { color: #0056b3; margin-top: 0; margin-bottom: 25px; font-size: 1.8rem; }
+        .alert { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 15px; }
+        input { width: 100%; padding: 14px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+        button, button:hover, button:active, button:focus, button:focus-visible { width: 100%; padding: 14px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px; transition: 0.3s; box-shadow:none !important; outline:none !important; }
+        .btn-primary { background: #28a745; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+        .cancel-link { display: block; margin-top: 15px; font-size: 14px; color: #6c757d; text-decoration: none; }
+        .cancel-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h2>Ingreso Maestro</h2>
+        
+        {% if error_msg %}
+        <div class="alert">
+            {{ error_msg }}
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/login">
+            <input type="hidden" name="force" value="{{ '1' if show_force_btn else '0' }}">
+            <input type="text" name="u" placeholder="Usuario" value="{{ prev_u or '' }}" required autocomplete="username">
+            <input type="password" name="p" placeholder="Clave" value="{{ prev_p or '' }}" required autocomplete="current-password">
+            
+            {% if show_force_btn %}
+            <button type="submit" class="btn-danger">Cerrar otra sesión e Ingresar</button>
+            <a href="/login" class="cancel-link">Cancelar</a>
+            {% else %}
+            <button type="submit" class="btn-primary">Entrar a Sala</button>
+            {% endif %}
+        </form>
+    </div>
+</body>
+</html>
