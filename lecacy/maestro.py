@@ -119,7 +119,11 @@ def init_db():
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("PRAGMA busy_timeout=5000")
         c.execute('''CREATE TABLE IF NOT EXISTS transacciones (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_hora TEXT, usuario TEXT, id_maquina TEXT, ip TEXT, monto REAL)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT, nombre_real TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS usuarios (username TEXT PRIMARY KEY, password TEXT, rol TEXT, nombre_real TEXT, password_temporal INTEGER DEFAULT 0)''')
+        c.execute("PRAGMA table_info(usuarios)")
+        cols_usuarios = [row[1] for row in c.fetchall()]
+        if 'password_temporal' not in cols_usuarios:
+            c.execute("ALTER TABLE usuarios ADD COLUMN password_temporal INTEGER DEFAULT 0")
         c.execute('''CREATE TABLE IF NOT EXISTS maquinas (id_esclavo TEXT PRIMARY KEY, nombre TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS logs_slot (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,9 +435,26 @@ def normalizar_monto(valor):
 def normalizar_texto_corto(valor, max_len=80):
     return str(valor or "").strip()[:max_len]
 
-def generar_password_temporal(length=12):
-    alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-    return "".join(secrets.choice(alfabeto) for _ in range(length))
+def generar_password_temporal(length=4):
+    return "".join(secrets.choice("0123456789") for _ in range(length))
+
+def obtener_usuario_login(username):
+    with db_lock:
+        conn = sqlite3.connect(DB_NAME, timeout=10)
+        c = conn.cursor()
+        c.execute("SELECT username, password, rol, nombre_real, COALESCE(password_temporal, 0) FROM usuarios WHERE username=?", (username,))
+        row = c.fetchone()
+        conn.close()
+    return row
+
+def iniciar_sesion_usuario(username):
+    sid = uuid.uuid4().hex
+    datos = datos_sesion_request(request)
+    session.permanent = True
+    session['usuario'] = username
+    session['sid'] = sid
+    session['last_activity'] = time.time()
+    usuarios_activos[username] = {"sid": sid, "last": time.time(), "ip": datos["ip"], "ua": datos["ua"]}
 
 def log_runtime_warning(contexto, error):
     print(f"[-] {contexto}: {error}")
@@ -563,8 +584,8 @@ def seed_initial_users(cursor):
         generated_admin_pass = True
 
     cursor.execute(
-        "INSERT INTO usuarios VALUES (?, ?, 'admin', ?)",
-        (admin_user, generate_password_hash(admin_pass), admin_name),
+        "INSERT INTO usuarios (username, password, rol, nombre_real, password_temporal) VALUES (?, ?, 'admin', ?, ?)",
+        (admin_user, generate_password_hash(admin_pass), admin_name, 1 if generated_admin_pass else 0),
     )
 
     if generated_admin_pass:
@@ -580,7 +601,7 @@ def seed_initial_users(cursor):
     operador_name = normalizar_texto_corto(env_str("INIT_OPERATOR_NAME", "Operador de Sala"), 80) or "Operador de Sala"
     if operador_user and operador_pass:
         cursor.execute(
-            "INSERT INTO usuarios VALUES (?, ?, 'operador', ?)",
+            "INSERT INTO usuarios (username, password, rol, nombre_real, password_temporal) VALUES (?, ?, 'operador', ?, 0)",
             (operador_user, generate_password_hash(operador_pass), operador_name),
         )
 
@@ -880,14 +901,35 @@ def login():
     if request.method == 'POST':
         u, p = request.form.get('u'), request.form.get('p')
         force = request.form.get('force') == '1'
-        
-        with db_lock:
-            conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
-            c.execute("SELECT password FROM usuarios WHERE username=?", (u,))
-            row = c.fetchone()
-            conn.close()
-        
-        if row and check_password_hash(row[0], p): 
+        cambio_temporal = request.form.get('change_temp') == '1'
+
+        row = obtener_usuario_login(u)
+
+        if cambio_temporal:
+            nueva_clave = request.form.get('new_password') or ''
+            confirmar_clave = request.form.get('confirm_password') or ''
+            if not (row and check_password_hash(row[1], p) and int(row[4] or 0) == 1):
+                registrar_accion_admin(u, "CAMBIO_TEMPORAL_INVALIDO", "Intento invalido de cambio de clave temporal", request.remote_addr)
+                return render_template('login.html', error_msg="La clave temporal ya no es válida. Inicia sesión nuevamente.", prev_u=u)
+            if not nueva_clave.strip():
+                return render_template('login.html', error_msg="Ingresa una nueva clave.", show_temp_change=True, prev_u=u, prev_p=p)
+            if nueva_clave != confirmar_clave:
+                return render_template('login.html', error_msg="Las claves no coinciden.", show_temp_change=True, prev_u=u, prev_p=p)
+            if nueva_clave == p:
+                return render_template('login.html', error_msg="La nueva clave debe ser distinta de la temporal.", show_temp_change=True, prev_u=u, prev_p=p)
+            nuevo_hash = generate_password_hash(nueva_clave)
+            with db_lock:
+                conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
+                c.execute("UPDATE usuarios SET password=?, password_temporal=0 WHERE username=?", (nuevo_hash, u))
+                conn.commit(); conn.close()
+            iniciar_sesion_usuario(u)
+            registrar_accion_admin(u, "CAMBIO_CLAVE_TEMPORAL", "Clave temporal renovada al iniciar sesion", request.remote_addr)
+            registrar_accion_admin(u, "LOGIN_OK", "Ingreso exitoso luego de cambio de clave temporal", request.remote_addr)
+            return redirect('/')
+
+        if row and check_password_hash(row[1], p): 
+            if int(row[4] or 0) == 1:
+                return render_template('login.html', info_msg="Debes cambiar la clave temporal antes de continuar.", show_temp_change=True, prev_u=u, prev_p=p)
             if sesion_activa_valida(u):
                 if not force:
                     registrar_accion_admin(u, "LOGIN_BLOQUEADO", "Sesion simultanea detectada", request.remote_addr)
@@ -895,14 +937,8 @@ def login():
                 else:
                     usuarios_activos.pop(u, None)
                     registrar_accion_admin(u, "LOGIN_FORZADO", "Cierre de sesión previa e ingreso", request.remote_addr)
-            
-            sid = uuid.uuid4().hex
-            datos = datos_sesion_request(request)
-            session.permanent = True
-            session['usuario'] = u 
-            session['sid'] = sid
-            session['last_activity'] = time.time()
-            usuarios_activos[u] = {"sid": sid, "last": time.time(), "ip": datos["ip"], "ua": datos["ua"]}
+
+            iniciar_sesion_usuario(u)
             registrar_accion_admin(u, "LOGIN_OK", "Ingreso exitoso", request.remote_addr)
             return redirect('/')
         
@@ -1234,7 +1270,7 @@ def chg_pass():
         
         if row and check_password_hash(row[0], request.form.get('old')):
             nuevo_hash = generate_password_hash(request.form.get('new'))
-            c.execute("UPDATE usuarios SET password=? WHERE username=?", (nuevo_hash, usr))
+            c.execute("UPDATE usuarios SET password=?, password_temporal=0 WHERE username=?", (nuevo_hash, usr))
             conn.commit(); conn.close()
             return "OK"
         conn.close()
@@ -1281,7 +1317,7 @@ def rst_pass():
     hash_reset = generate_password_hash(nueva_clave)
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
-        c.execute("UPDATE usuarios SET password=? WHERE username=?", (hash_reset, usuario_obj))
+        c.execute("UPDATE usuarios SET password=?, password_temporal=1 WHERE username=?", (hash_reset, usuario_obj))
         if c.rowcount <= 0:
             conn.close()
             return "Usuario no encontrado", 404
@@ -1380,7 +1416,7 @@ def add_usr():
         hash_pass = generate_password_hash(password_nuevo)
         with db_lock:
             conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
-            c.execute("INSERT OR REPLACE INTO usuarios (username, password, rol, nombre_real) VALUES (?,?,?,?)", 
+            c.execute("INSERT OR REPLACE INTO usuarios (username, password, rol, nombre_real, password_temporal) VALUES (?,?,?,?,0)", 
                       (usuario_obj, hash_pass, rol_nuevo, nombre_real))
             c.execute("""INSERT INTO limites_usuario (username, max_operacion, max_diario)
                          VALUES (?,?,?)

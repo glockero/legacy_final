@@ -28,7 +28,23 @@
         </div>
         {% endif %}
 
+        {% if info_msg %}
+        <div class="alert" style="background:#dbeafe; color:#1e3a8a; border-color:#93c5fd;">
+            {{ info_msg }}
+        </div>
+        {% endif %}
+
         <form method="POST" action="/login">
+            {% if show_temp_change %}
+            <input type="hidden" name="change_temp" value="1">
+            <input type="hidden" name="u" value="{{ prev_u or '' }}">
+            <input type="hidden" name="p" value="{{ prev_p or '' }}">
+            <input type="text" value="{{ prev_u or '' }}" disabled>
+            <input type="password" name="new_password" placeholder="Nueva clave" required autocomplete="new-password">
+            <input type="password" name="confirm_password" placeholder="Confirmar nueva clave" required autocomplete="new-password">
+            <button type="submit" class="btn-primary">Cambiar clave y entrar</button>
+            <a href="/login" class="cancel-link">Cancelar</a>
+            {% else %}
             <input type="hidden" name="force" value="{{ '1' if show_force_btn else '0' }}">
             <input type="text" name="u" placeholder="Usuario" value="{{ prev_u or '' }}" required autocomplete="username">
             <input type="password" name="p" placeholder="Clave" value="{{ prev_p or '' }}" required autocomplete="current-password">
@@ -38,6 +54,7 @@
             <a href="/login" class="cancel-link">Cancelar</a>
             {% else %}
             <button type="submit" class="btn-primary">Entrar a Sala</button>
+            {% endif %}
             {% endif %}
         </form>
     </div>
