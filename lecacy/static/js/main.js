@@ -2,6 +2,9 @@ let dAud =[], dAudFiltrada =[], tLogout, tsDB = 0, ultimoDashboard = null, dataU
 let audPage = 1, audPageSize = 50;
 let modalSlotActivo = -1; 
 let modalModo = "";
+let modalConfirmAction = null;
+let modalInputAction = null;
+let pendingDbRestoreFile = null;
 const liveClockFormatter = new Intl.DateTimeFormat('es-AR', {
     day: '2-digit',
     month: '2-digit',
@@ -25,6 +28,13 @@ function updateLiveClock() {
     const now = new Date();
     const serverNow = new Date(now.getTime() + serverTimeOffset);
     clock.textContent = liveClockFormatter.format(serverNow);
+}
+
+function ajustarTamanoModal(size = 'compact') {
+    const modalBox = document.getElementById('modal-box');
+    if(!modalBox) return;
+    modalBox.classList.remove('modal-compact', 'modal-medium', 'modal-wide');
+    modalBox.classList.add(`modal-${size}`);
 }
 
 function initHeaderSidebar() {
@@ -155,6 +165,196 @@ function closeMenu() {
     document.body.classList.remove('menu-open');
 }
 
+function abrirModalSimple(titulo, html, size = 'compact') {
+    ajustarTamanoModal(size);
+    document.getElementById('modal-title').innerText = titulo;
+    document.getElementById('modal-content').innerHTML = html;
+    document.getElementById('modal-overlay').style.display = 'flex';
+}
+
+function abrirModalMensaje(titulo, mensaje, tipo = 'info') {
+    const color = tipo === 'error' ? '#b91c1c' : tipo === 'success' ? '#16a34a' : '#1d4ed8';
+    abrirModalSimple(titulo, `
+        <div style="padding:18px; text-align:center;">
+            <p style="margin:0 0 16px; color:${color}; font-weight:700; white-space:pre-wrap;">${escapeHtml(mensaje)}</p>
+            <button class="btn-info" type="button" onclick="cerrarModal()">Cerrar</button>
+        </div>`);
+}
+
+function abrirModalConfirmacion(titulo, mensaje, onConfirmLabel = 'Confirmar') {
+    abrirModalSimple(titulo, `
+        <div style="padding:18px; text-align:center;">
+            <p style="margin:0 0 18px; white-space:pre-wrap;">${escapeHtml(mensaje)}</p>
+            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <button class="btn-quitar" type="button" onclick="cancelarModalConfirmacion()">Cancelar</button>
+                <button class="btn-info" type="button" onclick="ejecutarModalConfirmacion()">${escapeHtml(onConfirmLabel)}</button>
+            </div>
+        </div>`);
+}
+
+function abrirModalEntrada(titulo, mensaje, valorInicial = '', onConfirmLabel = 'Guardar', placeholder = '') {
+    abrirModalSimple(titulo, `
+        <div style="padding:18px;">
+            <p style="margin:0 0 14px; white-space:pre-wrap;">${escapeHtml(mensaje)}</p>
+            <input type="text" id="modal-input-field" value="${escapeHtml(valorInicial)}" placeholder="${escapeHtml(placeholder)}" style="width:100%; margin:0 0 16px;">
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+                <button class="btn-quitar" type="button" onclick="cancelarModalEntrada()">Cancelar</button>
+                <button class="btn-info" type="button" onclick="ejecutarModalEntrada()">${escapeHtml(onConfirmLabel)}</button>
+            </div>
+        </div>`);
+    const input = document.getElementById('modal-input-field');
+    if(input) {
+        input.focus();
+        input.select();
+        input.addEventListener('keydown', (ev) => {
+            if(ev.key === 'Enter') ejecutarModalEntrada();
+        });
+    }
+}
+
+function cancelarModalConfirmacion() {
+    modalConfirmAction = null;
+    cerrarModal();
+}
+
+function cancelarModalEntrada() {
+    modalInputAction = null;
+    cerrarModal();
+}
+
+async function ejecutarModalConfirmacion() {
+    const action = modalConfirmAction;
+    modalConfirmAction = null;
+    cerrarModal();
+    if(action) await action();
+}
+
+async function ejecutarModalEntrada() {
+    const action = modalInputAction;
+    const input = document.getElementById('modal-input-field');
+    const valor = input ? input.value : '';
+    modalInputAction = null;
+    cerrarModal();
+    if(action) await action(valor);
+}
+
+async function copiarTexto(texto) {
+    if(navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(texto);
+        return true;
+    }
+    const temp = document.createElement('textarea');
+    temp.value = texto;
+    temp.setAttribute('readonly', '');
+    temp.style.position = 'absolute';
+    temp.style.left = '-9999px';
+    document.body.appendChild(temp);
+    temp.select();
+    temp.setSelectionRange(0, temp.value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(temp);
+    return ok;
+}
+
+async function copiarClaveTemporal(clave) {
+    const feedback = document.getElementById('temp-pass-copy-feedback');
+    try {
+        const ok = await copiarTexto(clave);
+        if(feedback) feedback.textContent = ok ? 'Clave copiada al portapapeles.' : 'No se pudo copiar automáticamente.';
+    } catch {
+        if(feedback) feedback.textContent = 'No se pudo copiar automáticamente.';
+    }
+}
+
+async function copiarLoginCreado(login) {
+    const feedback = document.getElementById('user-create-copy-feedback');
+    try {
+        const ok = await copiarTexto(login);
+        if(feedback) feedback.textContent = ok ? 'Login copiado al portapapeles.' : 'No se pudo copiar automáticamente.';
+    } catch {
+        if(feedback) feedback.textContent = 'No se pudo copiar automáticamente.';
+    }
+}
+
+function escapeHtml(valor) {
+    return String(valor ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function abrirModalUsuarioCreado(usuario, nombre, rol) {
+    const usuarioSeguro = escapeHtml(usuario);
+    const nombreSeguro = escapeHtml(nombre);
+    const rolSeguro = escapeHtml(rol);
+    const usuarioArg = escapeHtml(JSON.stringify(usuario));
+    abrirModalSimple('Usuario creado', `
+        <div style="padding:18px; text-align:center;">
+            <h3 style="margin-top:0; color:#16a34a;">Usuario guardado con éxito</h3>
+            <p style="margin:12px 0;"><strong>Login:</strong> ${usuarioSeguro}</p>
+            <p style="margin:12px 0;"><strong>Nombre:</strong> ${nombreSeguro}</p>
+            <p style="margin:12px 0;"><strong>Rol:</strong> ${rolSeguro}</p>
+            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:14px;">
+                <button class="btn-download" type="button" onclick="copiarLoginCreado(${usuarioArg})">Copiar login</button>
+                <button class="btn-info" style="min-width:180px;" onclick="cerrarModal()">Cerrar</button>
+            </div>
+            <div id="user-create-copy-feedback" style="margin-top:12px; text-align:center; color:#2563eb; font-weight:600;"></div>
+        </div>`);
+}
+
+function abrirModalClaveTemporal(usuario, clave) {
+    const usuarioSeguro = escapeHtml(usuario);
+    const claveArg = escapeHtml(JSON.stringify(clave));
+    abrirModalSimple('Clave temporal generada', `
+        <div style="padding:18px;">
+            <p style="margin-top:0;">Se generó una nueva clave temporal para <strong>${usuarioSeguro}</strong>.</p>
+            <div style="background:#f3f4f6; border:1px solid #d1d5db; border-radius:10px; padding:14px; margin:16px 0; text-align:center;">
+                <div style="font-size:12px; color:#4b5563; margin-bottom:6px;">Clave temporal</div>
+                <div style="font-size:24px; font-weight:800; letter-spacing:1px; color:#1f2937; word-break:break-word;">${escapeHtml(clave)}</div>
+            </div>
+            <p style="margin:0 0 14px; text-align:center; color:#b91c1c; font-weight:700;">Guárdala ahora. No volverá a mostrarse automáticamente.</p>
+            <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                <button class="btn-download" type="button" onclick="copiarClaveTemporal(${claveArg})">Copiar clave</button>
+                <button class="btn-info" type="button" onclick="cerrarModal()">Cerrar</button>
+            </div>
+            <div id="temp-pass-copy-feedback" style="margin-top:12px; text-align:center; color:#2563eb; font-weight:600;"></div>
+        </div>`);
+}
+
+function abrirModalEditarUsuario(u, nAct, rAct, maxOpAct, maxDiaAct) {
+    const usuarioArg = escapeHtml(JSON.stringify(u));
+    abrirModalSimple(`Editar usuario: ${u}`, `
+        <div style="padding:12px; display:grid; gap:12px;">
+            <div>
+                <label>Nombre real</label><br>
+                <input type="text" id="edit_usr_nombre" value="${escapeHtml(nAct)}" style="width:100%; margin-top:5px;">
+            </div>
+            <div>
+                <label>Rol</label><br>
+                <select id="edit_usr_rol" style="width:100%; margin-top:5px;">
+                    <option value="admin" ${rAct === 'admin' ? 'selected' : ''}>Admin</option>
+                    <option value="supervisor" ${rAct === 'supervisor' ? 'selected' : ''}>Supervisor</option>
+                    <option value="operador" ${rAct === 'operador' ? 'selected' : ''}>Operador</option>
+                    <option value="consulta" ${rAct === 'consulta' ? 'selected' : ''}>Consulta</option>
+                </select>
+            </div>
+            <div>
+                <label>Límite por operación ($)</label><br>
+                <input type="number" id="edit_usr_max_op" value="${escapeHtml(maxOpAct || '0')}" style="width:100%; margin-top:5px;">
+            </div>
+            <div>
+                <label>Límite diario 24hs ($)</label><br>
+                <input type="number" id="edit_usr_max_dia" value="${escapeHtml(maxDiaAct || '0')}" style="width:100%; margin-top:5px;">
+            </div>
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; margin-top:6px;">
+                <button class="btn-quitar" type="button" onclick="cerrarModal()">Cancelar</button>
+                <button class="btn-info" type="button" onclick="guardarUsuarioEditado(${usuarioArg})">Guardar cambios</button>
+            </div>
+        </div>`);
+}
+
 document.addEventListener('click', (ev) => {
     const menu = document.getElementById('header-info');
     const toggle = document.getElementById('mobile-toggle');
@@ -181,9 +381,12 @@ async function menuSistema(valor) {
 }
 
 async function confirmarRebootHost() {
-    if(!confirm("Se reiniciara la Raspberry del sistema. Continuar?")) return;
-    let r = await fetch('/api/reboot_host', {method:'POST'});
-    alert(await r.text());
+    modalConfirmAction = async () => {
+        let r = await fetch('/api/reboot_host', {method:'POST'});
+        let msg = await r.text();
+        abrirModalMensaje(r.ok ? 'Reinicio programado' : 'Error al reiniciar', msg, r.ok ? 'success' : 'error');
+    };
+    abrirModalConfirmacion('Reiniciar Raspberry', 'Se programará el reinicio del host del sistema. ¿Continuar?', 'Reiniciar');
 }
 
 async function abrirEstadoHost() {
@@ -195,6 +398,7 @@ async function abrirEstadoHost() {
     let rtcIcon = d.rtc_detected ? `✅ RTC Detectado (${rtcDetalle})` : `❌ RTC No detectado (${rtcDetalle})`;
     let btnTime = d.rol === 'admin' ? `<button class="btn-info" style="margin-top:10px; width:100%;" onclick="cambiarHoraManual('${d.server_time}')">Ajustar Hora Sistema</button>` : '';
 
+    ajustarTamanoModal('medium');
     document.getElementById('modal-title').innerText = "Estado Raspberry / Host";
     document.getElementById('modal-content').innerHTML = `
         <div class="dash-grid">
@@ -215,21 +419,33 @@ async function abrirEstadoHost() {
 }
 
 async function cambiarHoraManual(horaActual) {
-    let nueva = prompt("Ingresa la fecha y hora actual (Formato: YYYY-MM-DD HH:MM:SS):", "");
-    if(!nueva) return;
-    
-    // Validacion basica de formato
-    if(!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(nueva)) {
-        return alert("Formato invalido. Debe ser YYYY-MM-DD HH:MM:SS");
-    }
+    abrirModalSimple('Ajustar hora del sistema', `
+        <div style="padding:18px;">
+            <p style="margin-top:0;">Ingresa la nueva fecha y hora en formato <strong>YYYY-MM-DD HH:MM:SS</strong>.</p>
+            <input type="text" id="system-time-input" value="" placeholder="2026-05-06 14:30:00" style="width:100%; margin:10px 0 14px;">
+            <div style="font-size:13px; color:#4b5563; margin-bottom:16px;">Hora actual informada por el servidor: ${escapeHtml(horaActual || '-')}</div>
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+                <button class="btn-quitar" type="button" onclick="cerrarModal()">Cancelar</button>
+                <button class="btn-info" type="button" onclick="guardarHoraManual()">Actualizar hora</button>
+            </div>
+        </div>`);
+}
 
-    if(!confirm("Esto cambiara la hora de TODO el sistema Raspberry. ¿Continuar?")) return;
-    
+async function guardarHoraManual() {
+    let nueva = document.getElementById('system-time-input').value.trim();
+    if(!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(nueva)) {
+        return abrirModalMensaje('Formato inválido', 'Debe ser YYYY-MM-DD HH:MM:SS.', 'error');
+    }
     let fd = new FormData();
     fd.append('fecha_hora', nueva);
     let r = await fetch('/api/system_time', {method:'POST', body:fd});
-    alert(await r.text());
-    if(r.ok) abrirEstadoHost();
+    let msg = await r.text();
+    if(r.ok) {
+        abrirModalMensaje('Hora actualizada', msg, 'success');
+        setTimeout(() => abrirEstadoHost(), 150);
+    } else {
+        abrirModalMensaje('Error al ajustar hora', msg, 'error');
+    }
 }
 
 async function abrirLogsSistema() {
@@ -237,25 +453,21 @@ async function abrirLogsSistema() {
     let data = await r.json();
     let h = "";
     data.forEach(x => h += `<tr><td>${x.fecha}</td><td>${x.tipo}</td><td>${x.detalle}</td></tr>`);
+    ajustarTamanoModal('wide');
     document.getElementById('modal-title').innerText = "Logs de sistema";
     document.getElementById('modal-content').innerHTML = `
         <div class="filtros-bar" style="justify-content:flex-end;"><button class="btn-download" onclick="window.location.href='/system_log_excel'">Descargar Excel</button></div>
-        <div class="table-responsive"><table>
+        <div class="table-responsive modal-scroll-table"><table>
           <thead><tr><th>Fecha/Hora</th><th>Tipo</th><th>Detalle</th></tr></thead>
           <tbody>${h || '<tr><td colspan="3" style="text-align:center;">Sin registros</td></tr>'}</tbody>
         </table></div>`;
     document.getElementById('modal-overlay').style.display = 'flex';
 }
 
-async function abrirDbManager() {
-    let pass = prompt("Contraseña de administrador:");
-    if(!pass) return;
-    let fd = new FormData(); fd.append('password', pass);
-    let r = await fetch('/api/db_info', {method:'POST', body:fd});
-    if(!r.ok) return alert(await r.text());
-    let d = await r.json();
+function renderDbManager(d) {
     let tablas = d.tablas.map(t => `<tr><td>${t.nombre}</td><td>${t.registros}</td></tr>`).join('');
-    let backups = d.backups.map(b => `<tr><td>${b.archivo}</td><td>${b.fecha}</td><td>${b.mb} MB</td><td><button class="btn-reboot" onclick="restaurarDb('${b.archivo}')">Restaurar</button></td></tr>`).join('');
+    let backups = d.backups.map(b => `<tr><td>${b.archivo}</td><td>${b.fecha}</td><td>${b.mb} MB</td><td><button class="btn-reboot" onclick="restaurarDb(${escapeHtml(JSON.stringify(b.archivo))})">Restaurar</button></td></tr>`).join('');
+    ajustarTamanoModal('wide');
     document.getElementById('modal-title').innerText = "Base de datos";
     document.getElementById('modal-content').innerHTML = `
         <div class="dash-grid">
@@ -264,20 +476,63 @@ async function abrirDbManager() {
           <div class="dash-card"><strong>Último backup</strong><span>${d.ultimo_backup}</span></div>
         </div>
         <h3>Tablas</h3>
-        <div class="table-responsive"><table><thead><tr><th>Tabla</th><th>Registros</th></tr></thead><tbody>${tablas}</tbody></table></div>
+        <div class="table-responsive modal-scroll-table"><table><thead><tr><th>Tabla</th><th>Registros</th></tr></thead><tbody>${tablas}</tbody></table></div>
         <h3>Backups disponibles</h3>
-        <div class="table-responsive"><table><thead><tr><th>Archivo</th><th>Fecha</th><th>MB</th><th>Acción</th></tr></thead><tbody>${backups || '<tr><td colspan="4" style="text-align:center;">Sin backups</td></tr>'}</tbody></table></div>`;
+        <div class="table-responsive modal-scroll-table"><table><thead><tr><th>Archivo</th><th>Fecha</th><th>MB</th><th>Acción</th></tr></thead><tbody>${backups || '<tr><td colspan="4" style="text-align:center;">Sin backups</td></tr>'}</tbody></table></div>`;
     document.getElementById('modal-overlay').style.display = 'flex';
 }
 
+async function abrirDbManager() {
+    abrirModalSimple('Base de datos', `
+        <div style="padding:18px;">
+            <p style="margin-top:0;">Ingresa la contraseña de administrador para ver el estado de la base.</p>
+            <input type="password" id="db-admin-password" placeholder="Contraseña de administrador" style="width:100%; margin:10px 0 16px;">
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+                <button class="btn-quitar" type="button" onclick="cerrarModal()">Cancelar</button>
+                <button class="btn-info" type="button" onclick="cargarDbManager()">Abrir base de datos</button>
+            </div>
+        </div>`);
+}
+
+async function cargarDbManager() {
+    let pass = document.getElementById('db-admin-password').value;
+    if(!pass) return abrirModalMensaje('Contraseña requerida', 'Ingresa la contraseña de administrador.', 'error');
+    let fd = new FormData();
+    fd.append('password', pass);
+    let r = await fetch('/api/db_info', {method:'POST', body:fd});
+    if(!r.ok) return abrirModalMensaje('Error al abrir base', await r.text(), 'error');
+    let d = await r.json();
+    renderDbManager(d);
+}
+
 async function restaurarDb(archivo) {
-    if(!confirm("¿Restaurar esta copia? Se hará un backup previo automático.")) return;
-    let pass = prompt("Confirma contraseña de administrador:");
-    if(!pass) return;
-    let fd = new FormData(); fd.append('password', pass); fd.append('archivo', archivo);
+    pendingDbRestoreFile = archivo;
+    abrirModalSimple('Restaurar backup', `
+        <div style="padding:18px;">
+            <p style="margin-top:0; color:#b91c1c; font-weight:700;">Se restaurará <strong>${escapeHtml(archivo)}</strong> y se generará un backup previo automático.</p>
+            <p>Confirma la contraseña de administrador para continuar.</p>
+            <input type="password" id="db-restore-password" placeholder="Contraseña de administrador" style="width:100%; margin:10px 0 16px;">
+            <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+                <button class="btn-quitar" type="button" onclick="cerrarModal()">Cancelar</button>
+                <button class="btn-reboot" type="button" onclick="confirmarRestauracionDb()">Restaurar backup</button>
+            </div>
+        </div>`);
+}
+
+async function confirmarRestauracionDb() {
+    let pass = document.getElementById('db-restore-password').value;
+    if(!pass) return abrirModalMensaje('Contraseña requerida', 'Ingresa la contraseña de administrador.', 'error');
+    let fd = new FormData();
+    fd.append('password', pass);
+    fd.append('archivo', pendingDbRestoreFile || '');
     let r = await fetch('/api/db_restore', {method:'POST', body:fd});
-    alert(await r.text());
-    if(r.ok) location.reload();
+    let msg = await r.text();
+    if(r.ok) {
+        abrirModalMensaje('Base restaurada', msg, 'success');
+        setTimeout(() => location.reload(), 400);
+    } else {
+        abrirModalMensaje('Error al restaurar backup', msg, 'error');
+    }
 }
 
 function openTab(id, btn) {
@@ -313,13 +568,14 @@ function abrirModalSlots(tipo) {
     if(!ultimoDashboard) return;
     let titulo = tipo === 'conectados' ? 'Slots conectados' : 'Slots con SAS desconectado';
     let datos = tipo === 'conectados' ? ultimoDashboard.slot_detalle.conectados : ultimoDashboard.slot_detalle.sas_desconectado;
+    ajustarTamanoModal('wide');
     document.getElementById('modal-title').innerText = titulo;
     let h = "";
     datos.forEach(s => {
         h += `<tr><td>${s.slot}</td><td>${s.nombre}</td><td>${s.id}</td><td>${s.ip}</td><td>${s.sas}</td><td>${s.ultima_conexion}</td><td>${s.tiempo_desconexion}</td><td>${s.uptime}</td><td>${s.firmware}</td><td>${s.ultimo_error}</td><td>${s.evento}</td></tr>`;
     });
     document.getElementById('modal-content').innerHTML = `
-        <div class="table-responsive">
+        <div class="table-responsive modal-scroll-table">
             <table>
                 <thead><tr><th>Slot</th><th>Nombre</th><th>ID</th><th>IP</th><th>SAS</th><th>Última conexión</th><th>Tiempo desconexión</th><th>Uptime</th><th>Firmware</th><th>Último error</th><th>Evento</th></tr></thead>
                 <tbody>${h || '<tr><td colspan="11" style="text-align:center;">Sin registros</td></tr>'}</tbody>
@@ -365,9 +621,10 @@ async function abrirModalSolicitudes() {
     data.forEach(x => {
         h += `<tr><td>${x.fecha}</td><td>${x.usuario}</td><td>$${x.monto}</td><td><button onclick="aprobarSolicitud(${x.id})">Aprobar (+Límite)</button></td></tr>`;
     });
+    ajustarTamanoModal('medium');
     document.getElementById('modal-title').innerText = "Solicitudes de aumento de crédito";
     document.getElementById('modal-content').innerHTML = `
-        <div class="table-responsive">
+        <div class="table-responsive modal-scroll-table">
           <table>
             <thead><tr><th>Fecha</th><th>Usuario</th><th>Monto Solicitado</th><th>Acción</th></tr></thead>
             <tbody>${h || '<tr><td colspan="4" style="text-align:center;">No hay solicitudes pendientes</td></tr>'}</tbody>
@@ -379,8 +636,8 @@ async function abrirModalSolicitudes() {
 async function aprobarSolicitud(id) {
     let fd = new FormData(); fd.append('id', id);
     let r = await fetch('/api/solicitudes/aprobar', {method:'POST', body:fd});
-    alert(await r.text());
-    abrirModalSolicitudes();
+    let msg = await r.text();
+    abrirModalMensaje(r.ok ? 'Solicitud procesada' : 'Error al aprobar solicitud', msg, r.ok ? 'success' : 'error');
     loadAlertas();
 }
 
@@ -396,6 +653,7 @@ async function loadLimitesRol() {
 }
 
 async function editarLimiteRol(rol, opAct, diaAct) {
+    ajustarTamanoModal('compact');
     document.getElementById('modal-title').innerText = "Editar límites: " + rol.toUpperCase();
     document.getElementById('modal-content').innerHTML = `
         <div style="padding: 10px;">
@@ -415,13 +673,16 @@ async function editarLimiteRol(rol, opAct, diaAct) {
 async function guardarLimitesRol(rol) {
     let nOp = document.getElementById('edit_rol_op').value;
     let nDia = document.getElementById('edit_rol_dia').value;
-    if(nOp === "" || nDia === "") return alert("Por favor complete ambos montos.");
+    if(nOp === "" || nDia === "") return abrirModalMensaje('Campos incompletos', 'Por favor complete ambos montos.', 'error');
     let fd = new FormData(); fd.append('rol', rol); fd.append('max_operacion', nOp); fd.append('max_diario', nDia);
     let r = await fetch('/api/limites_rol/edit', {method:'POST', body:fd});
-    alert(await r.text());
+    let msg = await r.text();
     if(r.ok) {
         cerrarModal();
+        abrirModalMensaje('Límites actualizados', msg, 'success');
         loadLimitesRol();
+    } else {
+        abrirModalMensaje('Error al actualizar límites', msg, 'error');
     }
 }
 
@@ -603,9 +864,13 @@ function abrirDetalleUsuario(user) {
     if(!u) return;
     const disponible = Math.max(0, u.max_diario - u.usado_24h);
     const ultimaCarga = u.ultima_carga !== null ? `$${u.ultima_carga} en ${u.ultima_maquina} hace ${u.ultima_carga_min} min` : 'Sin historial';
+    const editarArgs = [u.user, u.nombre, u.rol, String(u.max_operacion ?? '0'), String(u.max_diario ?? '0')]
+        .map(valor => escapeHtml(JSON.stringify(valor)))
+        .join(', ');
+    ajustarTamanoModal('medium');
     const accionesHtml = `
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:15px;">
-            <button class="btn-info" onclick="editarUsr('${u.user}', '${u.nombre}', '${u.rol}', '${u.max_operacion}', '${u.max_diario}')">Datos</button>
+            <button class="btn-info" onclick="editarUsr(${editarArgs})">Datos</button>
             <button class="btn-info" style="background:#28a745;" onclick="abrirModalEditarLimites('${u.user}', '${u.max_operacion}', '${u.max_diario}')">Limites</button>
             <button class="btn-info" style="background:#6f42c1;" onclick="abrirModalExtraCredit('${u.user}')">Credito</button>
             <button class="btn-reboot" onclick="rstUsr('${u.user}')">Reset Clave</button>
@@ -655,6 +920,7 @@ function ajustarUsuariosMobile() {
 
 function mostrarInfo(id, ip, mac, online) {
     let est = online ? 'Online' : 'Desconectado';
+    ajustarTamanoModal('compact');
     document.getElementById('modal-title').innerText = "Info tecnica";
     document.getElementById('modal-content').innerHTML = `
         <div class="dash-grid" style="margin-top:0;">
@@ -669,6 +935,7 @@ function mostrarInfo(id, ip, mac, online) {
 async function abrirModalCargas(slot, id, nombre) {
     modalSlotActivo = -1;
     modalModo = "cargas";
+    ajustarTamanoModal('wide');
     document.getElementById('modal-title').innerText = "Auditoria de cargas: " + nombre;
     document.getElementById('modal-content').innerHTML = '<div style="text-align:center; padding: 20px; font-weight:bold; color:#555;">Cargando auditoria...</div>';
     document.getElementById('modal-overlay').style.display = 'flex';
@@ -695,7 +962,7 @@ async function cargarAuditoriaSlot(slot, idEsc) {
         <div style="display:flex; justify-content:flex-end; margin-bottom:10px;">
             <button class="btn-download" onclick="descargarContaduriaSlot(${slot}, '${idEsc || ""}')">Descargar Excel</button>
         </div>
-        <div class="table-responsive">
+        <div class="table-responsive modal-scroll-table">
             <table>
                 <thead><tr><th>Fecha/Hora</th><th>Usuario</th><th>Maquina</th><th>IP</th><th>Monto</th><th>Estado</th></tr></thead>
                 <tbody>${rows || '<tr><td colspan="6" style="text-align:center;">Sin cargas registradas</td></tr>'}</tbody>
@@ -706,6 +973,7 @@ async function cargarAuditoriaSlot(slot, idEsc) {
 function abrirModalContadores(id, slot, nombre) {
     modalSlotActivo = slot;
     modalModo = "contadores";
+    ajustarTamanoModal('medium');
     document.getElementById('modal-title').innerText = "Auditoría: " + nombre;
     document.getElementById('modal-content').innerHTML = '<div style="text-align:center; padding: 20px; font-weight:bold; color:#555;">⏳ Consultando a la máquina...<br><br><small>Por favor espere.</small></div>';
     document.getElementById('modal-overlay').style.display = 'flex';
@@ -717,11 +985,13 @@ function cerrarModal() {
     document.getElementById('modal-overlay').style.display = 'none';
     modalSlotActivo = -1;
     modalModo = "";
+    modalConfirmAction = null;
 }
 
 async function abrirModalLog(slot, id, nombre) {
     modalSlotActivo = -1;
     modalModo = "log";
+    ajustarTamanoModal('wide');
     document.getElementById('modal-title').innerText = "Log por slot: " + nombre;
     document.getElementById('modal-content').innerHTML = `
         <div class="filtros-bar">
@@ -730,7 +1000,7 @@ async function abrirModalLog(slot, id, nombre) {
             <button class="btn-info" onclick="cargarLogSlot(${slot})">Filtrar</button>
             <button class="btn-download" onclick="descargarLogFiltrado(${slot})">Descargar Excel</button>
         </div>
-        <div class="table-responsive">
+        <div class="table-responsive modal-scroll-table">
             <table>
                 <thead><tr><th>Fecha/Hora</th><th>Slot</th><th>ID Esclavo</th><th>Tipo</th><th>Usuario</th><th>Detalle</th><th>Monto</th></tr></thead>
                 <tbody id="tabla-log-slot"><tr><td colspan="7" style="text-align:center;">Cargando...</td></tr></tbody>
@@ -1002,9 +1272,12 @@ function limpiarFiltros() {
 }
 
 async function backupForzado() {
-    if(!confirm("Crear backup manual ahora?")) return;
-    let r = await fetch('/api/backup_forzado', {method:'POST'});
-    alert(await r.text());
+    modalConfirmAction = async () => {
+        let r = await fetch('/api/backup_forzado', {method:'POST'});
+        let msg = await r.text();
+        abrirModalMensaje(r.ok ? 'Backup creado' : 'Error de backup', msg, r.ok ? 'success' : 'error');
+    };
+    abrirModalConfirmacion('Crear backup manual', 'Se generará un backup de la base de datos ahora mismo.', 'Crear backup');
 }
 
 function initResizableColumns() {
@@ -1020,14 +1293,18 @@ function initResizableColumns() {
 
 async function cambiarNombre() {
     let fd = new FormData(); fd.append('n', document.getElementById('perfil_nombre').value);
-    await fetch('/api/perfil/nombre', {method:'POST', body:fd}); alert("Nombre actualizado");
+    let r = await fetch('/api/perfil/nombre', {method:'POST', body:fd});
+    let msg = r.ok ? 'Nombre actualizado correctamente.' : await r.text();
+    abrirModalMensaje(r.ok ? 'Perfil actualizado' : 'Error al actualizar perfil', msg, r.ok ? 'success' : 'error');
 }
 
 async function cambiarPass() {
     let fa = document.getElementById('pass_actual').value, fn = document.getElementById('pass_nueva').value;
-    if(!fa || !fn) return alert("Completa ambos campos");
+    if(!fa || !fn) return abrirModalMensaje('Campos incompletos', 'Completa ambos campos.', 'error');
     let fd = new FormData(); fd.append('old', fa); fd.append('new', fn);
-    let r = await fetch('/api/perfil/pass', {method:'POST', body:fd}); alert(await r.text());
+    let r = await fetch('/api/perfil/pass', {method:'POST', body:fd});
+    let msg = await r.text();
+    abrirModalMensaje(r.ok ? 'Contraseña actualizada' : 'Error al cambiar contraseña', msg, r.ok ? 'success' : 'error');
     document.getElementById('pass_actual').value=''; document.getElementById('pass_nueva').value='';
 }
 
@@ -1039,8 +1316,11 @@ async function loadUsr() {
         let montoCell = u.ultima_carga !== null ? `<strong style="color:green;">$${u.ultima_carga}</strong>` : '<span style="color:#999;">$0.00</span>';
         let disponible = Math.max(0, u.max_diario - u.usado_24h);
         let limites = `<small>Operación: <strong>$${Number(u.max_operacion || 0).toFixed(2)}</strong><br>24hs: <strong>$${Number(u.max_diario || 0).toFixed(2)}</strong><br>Usado: <strong style="color:${u.usado_24h >= u.max_diario && u.max_diario > 0 ? 'red' : 'inherit'}">$${Number(u.usado_24h || 0).toFixed(2)}</strong><br>Disponible: <strong style="color:#28a745;">$${Number(disponible).toFixed(2)}</strong></small>`;
+        let editarArgs = [u.user, u.nombre, u.rol, String(u.max_operacion ?? '0'), String(u.max_diario ?? '0')]
+            .map(valor => escapeHtml(JSON.stringify(valor)))
+            .join(', ');
         let btns = `<div style="display:flex; gap:5px; flex-wrap:wrap;">
-                      <button class="btn-info" onclick="editarUsr('${u.user}', '${u.nombre}', '${u.rol}', '${u.max_operacion}', '${u.max_diario}')">✏️ Datos</button> 
+                      <button class="btn-info" onclick="editarUsr(${editarArgs})">✏️ Datos</button> 
                       <button class="btn-info" style="background:#28a745;" onclick="abrirModalEditarLimites('${u.user}', '${u.max_operacion}', '${u.max_diario}')">💰 Límites</button> 
                       <button class="btn-info" style="background:#6f42c1;" onclick="abrirModalExtraCredit('${u.user}')">➕ Crédito</button>
                       <button class="btn-reboot" onclick="rstUsr('${u.user}')">Reset Clave</button>
@@ -1053,6 +1333,7 @@ async function loadUsr() {
 }
 
 function abrirModalEditarLimites(u, maxOp, maxDia) {
+    ajustarTamanoModal('compact');
     document.getElementById('modal-title').innerText = "Editar Límites: " + u;
     document.getElementById('modal-content').innerHTML = `
         <div style="padding:10px;">
@@ -1071,11 +1352,18 @@ async function guardarLimites(u) {
     fd.append('max_operacion', document.getElementById('edit_m_op').value);
     fd.append('max_diario', document.getElementById('edit_m_dia').value);
     let r = await fetch('/api/usuarios/edit_limits', {method:'POST', body:fd});
-    if(r.ok) { alert("Límites actualizados"); cerrarModal(); loadUsr(); }
-    else alert(await r.text());
+    let msg = await r.text();
+    if(r.ok) {
+        cerrarModal();
+        abrirModalMensaje('Límites actualizados', msg || `Se actualizaron los límites de ${u}.`, 'success');
+        loadUsr();
+    } else {
+        abrirModalMensaje('Error al actualizar límites', msg, 'error');
+    }
 }
 
 function abrirModalExtraCredit(u) {
+    ajustarTamanoModal('compact');
     document.getElementById('modal-title').innerText = "Inyectar Crédito Adicional: " + u;
     document.getElementById('modal-content').innerHTML = `
         <div style="padding:10px;">
@@ -1089,68 +1377,113 @@ function abrirModalExtraCredit(u) {
 
 async function inyectarCredito(u) {
     let m = document.getElementById('extra_monto').value;
-    if(!m || m <= 0) return alert("Ingresa un monto válido");
+    if(!m || m <= 0) return abrirModalMensaje('Monto inválido', 'Ingresa un monto válido.', 'error');
     let fd = new FormData(); fd.append('u', u); fd.append('monto', m);
     let r = await fetch('/api/usuarios/add_extra_credit', {method:'POST', body:fd});
-    if(r.ok) { alert("Crédito inyectado con éxito"); cerrarModal(); loadUsr(); }
-    else alert(await r.text());
+    let msg = await r.text();
+    if(r.ok) {
+        cerrarModal();
+        abrirModalMensaje('Crédito inyectado', msg || 'Crédito inyectado con éxito.', 'success');
+        loadUsr();
+    } else {
+        abrirModalMensaje('Error al inyectar crédito', msg, 'error');
+    }
 }
 
 async function editarUsr(u, nAct, rAct, maxOpAct, maxDiaAct) {
-    let nNuevo = prompt(`Modificar Nombre Real para '${u}':`, nAct);
-    if(nNuevo === null) return; 
-    let rNuevo = prompt(`Modificar Rol para '${u}' (admin, supervisor, operador o consulta):`, rAct);
-    if(rNuevo === null) return;
-    let maxOp = prompt(`Límite por operación para '${u}' (0 = sin límite):`, maxOpAct || "0");
-    if(maxOp === null) return;
-    let maxDia = prompt(`Límite diario 24hs para '${u}' (0 = sin límite):`, maxDiaAct || "0");
-    if(maxDia === null) return;
-    if(!['admin','supervisor','operador','consulta'].includes(rNuevo)) return alert("Rol inválido");
-    let fd = new FormData(); fd.append('u', u); fd.append('n', nNuevo); fd.append('r', rNuevo);
-    fd.append('max_operacion', maxOp); fd.append('max_diario', maxDia);
-    await fetch('/api/usuarios/edit', {method:'POST', body:fd}); loadUsr();
+    abrirModalEditarUsuario(u, nAct, rAct, maxOpAct, maxDiaAct);
+}
+
+async function guardarUsuarioEditado(u) {
+    let nNuevo = document.getElementById('edit_usr_nombre').value.trim();
+    let rNuevo = document.getElementById('edit_usr_rol').value;
+    let maxOp = document.getElementById('edit_usr_max_op').value || '0';
+    let maxDia = document.getElementById('edit_usr_max_dia').value || '0';
+    if(!nNuevo) return abrirModalMensaje('Dato inválido', 'El nombre es obligatorio.', 'error');
+    if(!['admin','supervisor','operador','consulta'].includes(rNuevo)) return abrirModalMensaje('Dato inválido', 'Rol inválido.', 'error');
+    let fd = new FormData();
+    fd.append('u', u);
+    fd.append('n', nNuevo);
+    fd.append('r', rNuevo);
+    fd.append('max_operacion', maxOp);
+    fd.append('max_diario', maxDia);
+    let r = await fetch('/api/usuarios/edit', {method:'POST', body:fd});
+    let msg = await r.text();
+    if(!r.ok) return abrirModalMensaje('Error al editar usuario', msg, 'error');
+    cerrarModal();
+    abrirModalMensaje('Usuario actualizado', `Se actualizaron los datos de ${u}.`, 'success');
+    loadUsr();
 }
 
 async function crearUsr() {
-    let u = document.getElementById('new_usr').value, p = document.getElementById('new_pass').value, n = document.getElementById('new_real').value;
+    let u = document.getElementById('new_usr').value.trim(), p = document.getElementById('new_pass').value, n = document.getElementById('new_real').value.trim();
+    let rol = document.getElementById('new_rol').value;
     let maxOp = document.getElementById('new_max_op').value || "0";
     let maxDia = document.getElementById('new_max_dia').value || "0";
-    if(!u || !p || !n) return alert("Completa todos los campos obligatorios (Login, Nombre, Clave)");
-    let fd = new FormData(); fd.append('u', u); fd.append('p', p); fd.append('r', document.getElementById('new_rol').value); fd.append('n', n);
+    if(!u || !p || !n) return abrirModalMensaje('Campos incompletos', 'Completa todos los campos obligatorios (Login, Nombre, Clave).', 'error');
+    let fd = new FormData(); fd.append('u', u); fd.append('p', p); fd.append('r', rol); fd.append('n', n);
     fd.append('max_operacion', maxOp); fd.append('max_diario', maxDia);
-    await fetch('/api/usuarios/add', {method:'POST', body:fd}); 
+    let r = await fetch('/api/usuarios/add', {method:'POST', body:fd});
+    if(!r.ok) return abrirModalMensaje('Error al crear usuario', await r.text(), 'error');
     document.getElementById('new_usr').value=''; document.getElementById('new_real').value=''; document.getElementById('new_pass').value='';
     document.getElementById('new_max_op').value=''; document.getElementById('new_max_dia').value='';
-    alert("✅ Usuario guardado con éxito.");
+    abrirModalUsuarioCreado(u, n, rol);
     loadUsr();
 }
 
 async function rstUsr(u) {
-    if(!confirm("Generar una nueva clave temporal para este usuario?")) return;
-    let fd = new FormData();
-    fd.append('u', u);
-    let r = await fetch('/api/usuarios/reset', {method:'POST', body:fd});
-    alert(await r.text());
+    modalConfirmAction = async () => {
+        let fd = new FormData();
+        fd.append('u', u);
+        let r = await fetch('/api/usuarios/reset', {method:'POST', body:fd});
+        let msg = await r.text();
+        if(!r.ok) return abrirModalMensaje('Error al resetear clave', msg, 'error');
+        const match = msg.match(/^Clave temporal para\s+(.+?):\s+(.+)$/);
+        if(match) {
+            abrirModalClaveTemporal(match[1], match[2]);
+            return;
+        }
+        abrirModalSimple('Clave temporal generada', `<div style="padding:18px; text-align:center;"><p>${escapeHtml(msg)}</p><button class="btn-info" type="button" onclick="cerrarModal()">Cerrar</button></div>`);
+    };
+    abrirModalConfirmacion('Resetear clave', `Se generará una nueva clave temporal para ${u}.`, 'Generar clave');
 }
-async function delUsr(u) { if(confirm("Eliminar?")) { let fd=new FormData(); fd.append('u', u); await fetch('/api/usuarios/delete', {method:'POST', body:fd}); loadUsr(); } }
+async function delUsr(u) {
+    modalConfirmAction = async () => {
+        let fd = new FormData();
+        fd.append('u', u);
+        let r = await fetch('/api/usuarios/delete', {method:'POST', body:fd});
+        let msg = await r.text();
+        if(r.ok) {
+            abrirModalMensaje('Usuario eliminado', msg || `Se eliminó ${u}.`, 'success');
+            loadUsr();
+        } else {
+            abrirModalMensaje('Error al eliminar usuario', msg, 'error');
+        }
+    };
+    abrirModalConfirmacion('Eliminar usuario', `Se eliminará el usuario ${u}. Esta acción no se puede deshacer.`, 'Eliminar');
+}
 
 async function sendCmd(obj, id) {
     let v;
-    if (id === 'REBOOT') v = 'REBOOT';
+    if (id === 'REBOOT' || id === 'REBOOT_CONFIRMED') v = 'REBOOT';
     else v = document.getElementById(id).value;
     
     if(!v) return;
-    if(v==='REBOOT' && !confirm("¿Reiniciar la placa ESP32 físicamente?")) return;
+    if(v === 'REBOOT') {
+        modalConfirmAction = async () => sendCmd(obj, 'REBOOT_CONFIRMED');
+        return abrirModalConfirmacion('Reiniciar placa', '¿Reiniciar la placa ESP32 físicamente?', 'Reiniciar');
+    }
     let fd = new FormData(); fd.append('o', obj); fd.append('c', v); 
     let r = await fetch('/api/comando', {method:'POST', body:fd});
     if(r.status === 403) {
         let msg = await r.text();
         if(msg.toLowerCase().includes("limite") || msg.toLowerCase().includes("límite")) {
             abrirModalLimite(msg, v);
-        } else alert(msg);
-    } else if(!r.ok) alert(await r.text());
+        } else abrirModalMensaje('Operación rechazada', msg, 'error');
+    } else if(!r.ok) abrirModalMensaje('Error al enviar comando', await r.text(), 'error');
+    else abrirModalMensaje('Comando enviado', await r.text(), 'success');
 
-    if(id!=='REBOOT') document.getElementById(id).value='';
+    if(id !== 'REBOOT_CONFIRMED' && id !== 'REBOOT') document.getElementById(id).value='';
 }
 
 function abrirModalLimite(msg, monto) {
@@ -1171,8 +1504,7 @@ function abrirModalLimite(msg, monto) {
 async function solicitarAumento(monto) {
     let fd = new FormData(); fd.append('monto', monto);
     let r = await fetch('/api/solicitar_limite', {method:'POST', body:fd});
-    alert(await r.text());
-    cerrarModal();
+    abrirModalMensaje(r.ok ? 'Solicitud enviada' : 'Error al solicitar aumento', await r.text(), r.ok ? 'success' : 'error');
 }
 
 function slotsSeleccionados() {
@@ -1181,9 +1513,9 @@ function slotsSeleccionados() {
 
 async function sendSelectedCredit() {
     let ids = slotsSeleccionados();
-    if(ids.length === 0) return alert("Selecciona al menos un slot online");
+    if(ids.length === 0) return abrirModalMensaje('Selección requerida', 'Selecciona al menos un slot online.', 'error');
     let v = document.getElementById('cmd_multi').value;
-    if(!v) return alert("Ingresa un monto");
+    if(!v) return abrirModalMensaje('Monto requerido', 'Ingresa un monto.', 'error');
     let fd = new FormData(); fd.append('o', 'MULTI'); fd.append('targets', ids.join(',')); fd.append('c', v);
     let r = await fetch('/api/comando', {method:'POST', body:fd});
     
@@ -1191,25 +1523,58 @@ async function sendSelectedCredit() {
         let msg = await r.text();
         if(msg.toLowerCase().includes("limite") || msg.toLowerCase().includes("límite")) {
             abrirModalLimite(msg, v * ids.length);
-        } else alert(msg);
+        } else abrirModalMensaje('Operación rechazada', msg, 'error');
     } else {
-        alert(await r.text());
+        abrirModalMensaje(r.ok ? 'Carga enviada' : 'Error al enviar carga', await r.text(), r.ok ? 'success' : 'error');
         if(r.ok) document.getElementById('cmd_multi').value='';
     }
 }
 
 async function sendSelectedReset() {
     let ids = slotsSeleccionados();
-    if(ids.length === 0) return alert("Selecciona al menos un slot online");
-    if(!confirm("¿Enviar reset a los slots seleccionados?")) return;
-    let fd = new FormData(); fd.append('o', 'MULTI'); fd.append('targets', ids.join(',')); fd.append('c', 'REBOOT');
-    let r = await fetch('/api/comando', {method:'POST', body:fd});
-    alert(await r.text());
+    if(ids.length === 0) return abrirModalMensaje('Selección requerida', 'Selecciona al menos un slot online.', 'error');
+    modalConfirmAction = async () => {
+        let fd = new FormData(); fd.append('o', 'MULTI'); fd.append('targets', ids.join(',')); fd.append('c', 'REBOOT');
+        let r = await fetch('/api/comando', {method:'POST', body:fd});
+        abrirModalMensaje(r.ok ? 'Reset enviado' : 'Error al enviar reset', await r.text(), r.ok ? 'success' : 'error');
+    };
+    abrirModalConfirmacion('Reset masivo', '¿Enviar reset a los slots seleccionados?', 'Enviar reset');
 }
 
-async function renombrar(s, n) { let nv = prompt("Nombre:", n); if(nv) { let fd=new FormData(); fd.append('s', s); fd.append('n', nv); await fetch('/api/renombrar', {method:'POST', body:fd}); tick(); } }
-async function quitar(s) { if(confirm("¿Quitar visualmente de la lista?")) { let fd=new FormData(); fd.append('s', s); await fetch('/api/remove', {method:'POST', body:fd}); tick(); } }
-async function borrarHistorial() { if(confirm("¿Vaciar base de datos? Esto no se deshace.")) { await fetch('/api/limpiar_historial', {method:'POST'}); loadAud(); } }
+async function renombrar(s, n) {
+    modalInputAction = async (nv) => {
+        const nombreNuevo = nv.trim();
+        if(!nombreNuevo) return;
+        let fd = new FormData();
+        fd.append('s', s);
+        fd.append('n', nombreNuevo);
+        let r = await fetch('/api/renombrar', {method:'POST', body:fd});
+        if(!r.ok) return abrirModalMensaje('Error al renombrar', await r.text(), 'error');
+        tick();
+    };
+    abrirModalEntrada('Renombrar slot', 'Ingresa el nuevo nombre del slot.', n, 'Guardar', 'Nombre del slot');
+}
+
+async function quitar(s) {
+    modalConfirmAction = async () => {
+        let fd = new FormData();
+        fd.append('s', s);
+        let r = await fetch('/api/remove', {method:'POST', body:fd});
+        if(!r.ok) return abrirModalMensaje('Error al quitar slot', await r.text(), 'error');
+        tick();
+    };
+    abrirModalConfirmacion('Quitar slot', '¿Quitar visualmente de la lista?', 'Quitar');
+}
+
+async function borrarHistorial() {
+    modalConfirmAction = async () => {
+        let r = await fetch('/api/limpiar_historial', {method:'POST'});
+        if(!r.ok) return abrirModalMensaje('Error al vaciar base', await r.text(), 'error');
+        abrirModalMensaje('Base vaciada', 'La base de datos se vació correctamente.', 'success');
+        loadAud();
+    };
+    abrirModalConfirmacion('Vaciar base de datos', '¿Vaciar base de datos? Esto no se deshace.', 'Vaciar');
+}
 function descargarLogFiltrado(s) {
     let idEsc = document.getElementById('log_id_esclavo') ? document.getElementById('log_id_esclavo').value.trim() : "";
     window.location.href = '/slot_log_excel?slot=' + encodeURIComponent(s) + '&id_esclavo=' + encodeURIComponent(idEsc);
