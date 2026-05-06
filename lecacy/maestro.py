@@ -229,7 +229,7 @@ def registrar_log_slot(slot, tipo, detalle, usuario=None, monto=None, contadores
         if monto not in (None, ""):
             try:
                 monto_final = float(str(monto).replace("$", "").replace(",", "").strip())
-            except:
+            except (TypeError, ValueError):
                 monto_final = None
 
         with db_lock:
@@ -266,7 +266,7 @@ def parsear_contadores(raw):
         try:
             numero = float(valor)
             valor_mostrado = round(numero / 100, 2) if es_moneda else int(numero)
-        except:
+        except (TypeError, ValueError):
             pass
         contadores.append((clave, nombre, valor, valor_mostrado))
     return contadores
@@ -278,7 +278,7 @@ def nombre_archivo_seguro(valor):
 def parse_fecha_log(valor):
     try:
         return datetime.strptime(valor, "%d/%m/%Y %H:%M:%S")
-    except:
+    except (TypeError, ValueError):
         return None
 
 def obtener_auditoria_cargas_slot(slot=None, id_esclavo=""):
@@ -397,13 +397,13 @@ def formato_fecha_ts(ts):
         return "-"
     try:
         return datetime.fromtimestamp(ts).strftime("%d/%m/%Y %H:%M:%S")
-    except:
+    except (TypeError, ValueError, OSError, OverflowError):
         return "-"
 
 def formato_duracion(segundos):
     try:
         segundos = int(max(0, segundos))
-    except:
+    except (TypeError, ValueError):
         return "-"
     if segundos < 60:
         return f"{segundos}s"
@@ -422,7 +422,7 @@ def normalizar_monto(valor):
         return None
     try:
         monto = float(limpio)
-    except:
+    except (TypeError, ValueError):
         return None
     if monto <= 0:
         return None
@@ -434,6 +434,9 @@ def normalizar_texto_corto(valor, max_len=80):
 def generar_password_temporal(length=12):
     alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
     return "".join(secrets.choice(alfabeto) for _ in range(length))
+
+def log_runtime_warning(contexto, error):
+    print(f"[-] {contexto}: {error}")
 
 def parsear_limite_decimal(valor):
     try:
@@ -483,7 +486,8 @@ def obtener_limites_usuario(username, rol):
                     max_op = float(row_rol[0]) if row_rol[0] is not None else 0.0
                     max_dia = float(row_rol[1]) if row_rol[1] is not None else 0.0
             conn.close()
-    except:
+    except Exception as e:
+        log_runtime_warning("Fallback limites usuario", e)
         # Fallback a constantes si falla la DB
         max_op = MAX_MONTO_ROL.get(rol, 0.0)
         max_dia = MAX_DIARIO_ROL.get(rol, 0.0)
@@ -598,15 +602,15 @@ def get_boot_time_text():
             for line in f:
                 if line.startswith("btime "):
                     return formato_fecha_ts(float(line.split()[1]))
-    except:
-        pass
+    except Exception as e:
+        log_runtime_warning("No se pudo leer boot time", e)
     return "-"
 
 def read_text_file(path):
     try:
         with open(path, "r") as f:
             return f.read().strip()
-    except:
+    except OSError:
         return ""
 
 def obtener_info_rtc():
@@ -648,26 +652,26 @@ def obtener_estado_host():
     if temp_raw:
         try:
             temp = f"{float(temp_raw) / 1000:.1f} C"
-        except:
+        except (TypeError, ValueError):
             temp = temp_raw
     uptime = "-"
     up_raw = read_text_file("/proc/uptime")
     if up_raw:
         try:
             uptime = formato_duracion(float(up_raw.split()[0]))
-        except:
-            pass
+        except (TypeError, ValueError, IndexError) as e:
+            log_runtime_warning("No se pudo interpretar uptime", e)
     load = "-"
     try:
         load = " / ".join([f"{x:.2f}" for x in os.getloadavg()])
-    except:
-        pass
+    except (AttributeError, OSError) as e:
+        log_runtime_warning("No se pudo leer load average", e)
     throttled = "-"
     try:
         out = subprocess.check_output(["vcgencmd", "get_throttled"], timeout=2).decode().strip()
         throttled = out
-    except:
-        pass
+    except (OSError, subprocess.SubprocessError) as e:
+        log_runtime_warning("No se pudo leer throttling", e)
     return {
         "host": platform.node() or "-",
         "sistema": platform.platform(),
@@ -740,11 +744,11 @@ def registrar_arranque_sistema():
             c = conn.cursor()
             c.execute("SELECT tipo FROM system_logs ORDER BY id DESC LIMIT 1")
             row = c.fetchone()
-            conn.close()
+        conn.close()
         if row and row[0] not in ("APP_SHUTDOWN",):
             registrar_system_log("POSIBLE_CORTE_ENERGIA", "El proceso anterior no registro apagado limpio")
-    except:
-        pass
+    except Exception as e:
+        log_runtime_warning("No se pudo revisar arranque previo", e)
     registrar_system_log("APP_START", f"Arranque de AG Maestro. Boot host: {get_boot_time_text()}")
 
 def crear_backup_db():
@@ -761,8 +765,8 @@ def crear_backup_db():
         for viejo in backups[:-30]:
             try:
                 os.remove(viejo)
-            except:
-                pass
+            except OSError as e:
+                log_runtime_warning(f"No se pudo borrar backup viejo {os.path.basename(viejo)}", e)
         ultimo_backup = time.time()
     except Exception as e:
         print(f"[-] Error Backup DB: {e}")
@@ -941,7 +945,7 @@ def add_extra_credit():
     try:
         monto_extra = float(str(request.form.get('monto', '0')).replace(',', '.'))
         if monto_extra <= 0: return "Monto invalido", 400
-    except: return "Monto invalido", 400
+    except (TypeError, ValueError): return "Monto invalido", 400
     
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
@@ -1238,26 +1242,31 @@ def chg_pass():
 
 @app.route('/api/usuarios/edit', methods=['POST'])
 def edit_usr():
-    if check_auth(request)[0] != 'admin': return "403", 403
-    rol_nuevo = request.form.get('r')
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    if rol != 'admin': return "403", 403
+    rol_nuevo = normalizar_texto_corto(request.form.get('r'), 20)
     if rol_nuevo not in ROLES_VALIDOS: return "Rol invalido", 400
-    usuario_obj = request.form.get('u')
-    try:
-        max_operacion = float(str(request.form.get('max_operacion', '')).replace(',', '.'))
-        max_diario = float(str(request.form.get('max_diario', '')).replace(',', '.'))
-        if max_operacion < 0 or max_diario < 0:
-            return "Limites invalidos", 400
-    except:
+    usuario_obj = normalizar_texto_corto(request.form.get('u'), 40)
+    nombre_real = normalizar_texto_corto(request.form.get('n'), 80)
+    max_operacion = parsear_limite_decimal(request.form.get('max_operacion', ''))
+    max_diario = parsear_limite_decimal(request.form.get('max_diario', ''))
+    if not usuario_obj or not nombre_real:
+        return "Usuario y nombre son obligatorios", 400
+    if max_operacion is None or max_diario is None:
         return "Limites invalidos", 400
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
-        c.execute("UPDATE usuarios SET nombre_real=?, rol=? WHERE username=?", (request.form.get('n'), rol_nuevo, usuario_obj))
+        c.execute("UPDATE usuarios SET nombre_real=?, rol=? WHERE username=?", (nombre_real, rol_nuevo, usuario_obj))
+        if c.rowcount <= 0:
+            conn.close()
+            return "Usuario no encontrado", 404
         c.execute("""INSERT INTO limites_usuario (username, max_operacion, max_diario)
                      VALUES (?,?,?)
                      ON CONFLICT(username) DO UPDATE SET max_operacion=excluded.max_operacion, max_diario=excluded.max_diario""",
                   (usuario_obj, max_operacion, max_diario))
         conn.commit(); conn.close()
-    registrar_accion_admin(session.get('usuario'), "EDITAR_USUARIO", f"Usuario {usuario_obj} rol {rol_nuevo} limites op:{max_operacion} dia:{max_diario}", request.remote_addr)
+    registrar_accion_admin(usr, "EDITAR_USUARIO", f"Usuario {usuario_obj} rol {rol_nuevo} limites op:{max_operacion} dia:{max_diario}", request.remote_addr)
     return "OK"
 
 @app.route('/api/usuarios/reset', methods=['POST'])
@@ -1282,14 +1291,15 @@ def rst_pass():
 
 @app.route('/api/usuarios/edit_limits', methods=['POST'])
 def edit_usr_limits():
-    if check_auth(request)[0] != 'admin': return "403", 403
-    usuario_obj = request.form.get('u')
-    try:
-        max_operacion = float(str(request.form.get('max_operacion', '0')).replace(',', '.'))
-        max_diario = float(str(request.form.get('max_diario', '0')).replace(',', '.'))
-        if max_operacion < 0 or max_diario < 0:
-            return "Limites invalidos", 400
-    except:
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    if rol != 'admin': return "403", 403
+    usuario_obj = normalizar_texto_corto(request.form.get('u'), 40)
+    max_operacion = parsear_limite_decimal(request.form.get('max_operacion', '0'))
+    max_diario = parsear_limite_decimal(request.form.get('max_diario', '0'))
+    if not usuario_obj:
+        return "Usuario invalido", 400
+    if max_operacion is None or max_diario is None:
         return "Limites invalidos", 400
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
@@ -1298,7 +1308,7 @@ def edit_usr_limits():
                      ON CONFLICT(username) DO UPDATE SET max_operacion=excluded.max_operacion, max_diario=excluded.max_diario""",
                   (usuario_obj, max_operacion, max_diario))
         conn.commit(); conn.close()
-    registrar_accion_admin(session.get('usuario'), "EDITAR_LIMITES_USUARIO", f"Usuario {usuario_obj} op:{max_operacion} dia:{max_diario}", request.remote_addr)
+    registrar_accion_admin(usr, "EDITAR_LIMITES_USUARIO", f"Usuario {usuario_obj} op:{max_operacion} dia:{max_diario}", request.remote_addr)
     return "OK"
 
 @app.route('/api/usuarios')
@@ -1335,7 +1345,8 @@ def ls_usr():
             try:
                 diff = datetime.now() - datetime.strptime(ult[1], "%d/%m/%Y %H:%M:%S")
                 ult_min = int(diff.total_seconds() / 60)
-            except: pass
+            except (TypeError, ValueError):
+                ult_min = 0
             
         users_data.append({
             "user": u, "rol": rol, "nombre": nom, "online": is_online,
@@ -1493,7 +1504,7 @@ def api_slot_log():
     if check_auth(request)[0] == 'none': return "401", 401
     try:
         slot = int(request.args.get('slot', '-1'))
-    except:
+    except (TypeError, ValueError):
         return jsonify([])
     id_esclavo = (request.args.get('id_esclavo') or "").strip()
 
@@ -1534,7 +1545,7 @@ def api_slot_cargas():
     if check_auth(request)[0] == 'none': return "401", 401
     try:
         slot = int(request.args.get('slot', '-1'))
-    except:
+    except (TypeError, ValueError):
         slot = -1
     id_esclavo = (request.args.get('id_esclavo') or "").strip()
     cargas = obtener_auditoria_cargas_slot(slot, id_esclavo)
@@ -1571,12 +1582,16 @@ def excel_dl():
         
     d_start = None
     if inicio:
-        try: d_start = datetime.strptime(inicio, "%Y-%m-%d")
-        except: pass
+        try:
+            d_start = datetime.strptime(inicio, "%Y-%m-%d")
+        except ValueError:
+            d_start = None
     d_end = None
     if fin:
-        try: d_end = datetime.strptime(fin, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
-        except: pass
+        try:
+            d_end = datetime.strptime(fin, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+        except ValueError:
+            d_end = None
 
     filtered_rows = []
     for row in rows:
@@ -1649,9 +1664,11 @@ def system_log_excel():
 
 @app.route('/api/backup_forzado', methods=['POST'])
 def backup_forzado():
-    if check_auth(request)[0] != 'admin': return "403", 403
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    if rol != 'admin': return "403", 403
     crear_backup_db()
-    registrar_accion_admin(session.get('usuario'), "BACKUP_FORZADO", "Backup manual solicitado", request.remote_addr)
+    registrar_accion_admin(usr, "BACKUP_FORZADO", "Backup manual solicitado", request.remote_addr)
     return "Backup creado"
 
 @app.route('/slot_log_excel')
@@ -1659,7 +1676,7 @@ def slot_log_excel():
     if check_auth(request)[0] == 'none': return "401", 401
     try:
         slot = int(request.args.get('slot', '-1'))
-    except:
+    except (TypeError, ValueError):
         return "Slot invalido", 400
     id_esclavo = (request.args.get('id_esclavo') or "").strip()
     if not id_esclavo and (slot < 0 or slot >= MAX_CLIENTS):
@@ -1702,7 +1719,7 @@ def contaduria_slot_excel():
     if check_auth(request)[0] == 'none': return "401", 401
     try:
         slot = int(request.args.get('slot', '-1'))
-    except:
+    except (TypeError, ValueError):
         return "Slot invalido", 400
     id_esclavo = (request.args.get('id_esclavo') or "").strip()
     if not id_esclavo and (slot < 0 or slot >= MAX_CLIENTS):
