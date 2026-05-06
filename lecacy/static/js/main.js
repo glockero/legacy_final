@@ -591,11 +591,31 @@ async function loadDashboard() {
         let d = await r.json();
         ultimoDashboard = d;
         document.getElementById('dash-principal').innerHTML = `
-            <div class="dash-card"><strong>Monto 1h</strong><span class="dash-value">$${Number(d.montos.hora || 0).toFixed(2)}</span></div>
-            <div class="dash-card"><strong>Monto 24hs</strong><span class="dash-value">$${Number(d.montos.dia || 0).toFixed(2)}</span></div>
-            <div class="dash-card"><strong>Monto ultimo mes</strong><span class="dash-value">$${Number(d.montos.mes || 0).toFixed(2)}</span></div>
-            <div class="dash-card clickable" onclick="abrirModalSlots('conectados')"><strong>Slots conectados</strong><span class="dash-value">${d.slots.conectados}</span></div>
-            <div class="dash-card clickable" onclick="abrirModalSlots('sas_desconectado')"><strong>SAS desconectado</strong><span class="dash-value">${d.slots.sas_desconectado}</span></div>`;
+            <div class="dash-card dash-card-premium dash-card-money">
+                <span class="dash-kicker">Ultima hora</span>
+                <strong>Monto 1h</strong>
+                <span class="dash-value">$${Number(d.montos.hora || 0).toFixed(2)}</span>
+            </div>
+            <div class="dash-card dash-card-premium dash-card-money">
+                <span class="dash-kicker">Ventana diaria</span>
+                <strong>Monto 24hs</strong>
+                <span class="dash-value">$${Number(d.montos.dia || 0).toFixed(2)}</span>
+            </div>
+            <div class="dash-card dash-card-premium dash-card-money">
+                <span class="dash-kicker">Tendencia mensual</span>
+                <strong>Monto ultimo mes</strong>
+                <span class="dash-value">$${Number(d.montos.mes || 0).toFixed(2)}</span>
+            </div>
+            <div class="dash-card dash-card-premium dash-card-status clickable" onclick="abrirModalSlots('conectados')">
+                <span class="dash-kicker">Estado de red</span>
+                <strong>Slots conectados</strong>
+                <span class="dash-value">${d.slots.conectados}</span>
+            </div>
+            <div class="dash-card dash-card-premium dash-card-alert clickable" onclick="abrirModalSlots('sas_desconectado')">
+                <span class="dash-kicker">Revision requerida</span>
+                <strong>SAS desconectado</strong>
+                <span class="dash-value">${d.slots.sas_desconectado}</span>
+            </div>`;
         document.getElementById('chart-global').innerHTML = barRows(d.globales, 'cantidad', 'periodo');
     } catch(e) {}
 }
@@ -1128,6 +1148,11 @@ async function tick() {
     if(document.getElementById('sin-datos')) document.getElementById('sin-datos').remove();
 
     let activos =[];
+    const obtenerClaseFilaMaquina = (online, sas) => {
+        if(!online) return 'slot-row-offline';
+        if(!sas) return 'slot-row-warning';
+        return 'slot-row-online';
+    };
     d.esclavos.forEach(e => {
         let idF = 'fila_'+e.slot; activos.push(idF);
         let tr = document.getElementById(idF);
@@ -1159,7 +1184,7 @@ async function tick() {
             tr.setAttribute('data-o', e.online);
             tr.setAttribute('data-sas', e.sas); 
             
-            tr.className = e.online ? '' : 'fila-offline';
+            tr.className = obtenerClaseFilaMaquina(e.online, e.sas);
             tr.innerHTML = `<td data-label="" style="text-align: right;" id="sel_${e.slot}">${selHtml}</td><td data-label="Slot">${e.slot}</td><td data-label="Nombre" id="n_${e.slot}">${nHtml}</td><td data-label="Estado" id="s_${e.slot}" class="${e.online?'estado-ok':'estado-error'}">${estTxt}</td><td data-label="Evento" id="e_${e.slot}">${e.evento}</td><td data-label="Acción" id="a_${e.slot}">${actHtml}</td>`;
             tb.appendChild(tr);
         } else {
@@ -1176,7 +1201,7 @@ async function tick() {
                 document.getElementById('a_'+e.slot).innerHTML = actHtml;
                 tr.setAttribute('data-o', e.online);
                 tr.setAttribute('data-sas', e.sas);
-                tr.className = e.online ? '' : 'fila-offline';
+                tr.className = obtenerClaseFilaMaquina(e.online, e.sas);
             }
         }
     });
