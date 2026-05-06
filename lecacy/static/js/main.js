@@ -189,7 +189,10 @@ async function confirmarRebootHost() {
 async function abrirEstadoHost() {
     let r = await fetch('/api/host_status');
     let d = await r.json();
-    let rtcIcon = d.rtc_detected ? '✅ RTC Detectado' : '❌ RTC No detectado';
+    let rtcDetalle = d.rtc_devices && d.rtc_devices.length
+        ? d.rtc_devices.map(x => `${x.id}: ${x.name}`).join(' | ')
+        : 'Sin dispositivos RTC detectados';
+    let rtcIcon = d.rtc_detected ? `✅ RTC Detectado (${rtcDetalle})` : `❌ RTC No detectado (${rtcDetalle})`;
     let btnTime = d.rol === 'admin' ? `<button class="btn-info" style="margin-top:10px; width:100%;" onclick="cambiarHoraManual('${d.server_time}')">Ajustar Hora Sistema</button>` : '';
 
     document.getElementById('modal-title').innerText = "Estado Raspberry / Host";

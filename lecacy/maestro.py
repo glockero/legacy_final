@@ -4,16 +4,6 @@ import threading
 import time
 import openpyxl 
 import os
-
-# Carga de variables de entorno manual (Fase 1)
-def load_env_manual():
-    if os.path.exists(".env"):
-        with open(".env", "r") as f:
-            for line in f:
-                if "=" in line and not line.startswith("#"):
-                    k, v = line.strip().split("=", 1)
-                    os.environ[k] = v
-load_env_manual()
 import sqlite3 
 import shutil
 import uuid
@@ -24,21 +14,53 @@ import json
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, redirect, make_response, send_file, render_template, session
 from werkzeug.security import generate_password_hash, check_password_hash
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
-# Cargar configuración desde .env
+# Cargar configuración desde .env junto al script.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_FILE = os.path.join(BASE_DIR, ".env")
+
+def load_env_file(path):
+    if load_dotenv is not None:
+        load_dotenv(path)
+        return
+    if not os.path.exists(path):
+        return
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+load_env_file(ENV_FILE)
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
 
 PUERTO_WEB = int(os.getenv("PUERTO_WEB", 5000))
 PUERTO_UDP = int(os.getenv("PUERTO_UDP", 8081))
 MAX_CLIENTS = int(os.getenv("MAX_CLIENTS", 10))
+SESSION_TIMEOUT_SECONDS = int(os.getenv("SESSION_TIMEOUT_SECONDS", 30 * 60))
 
-# ESCUDO 1: Forzamos la ruta absoluta de la Base de Datos
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(BASE_DIR, os.getenv("DB_NAME", "casino_data.db"))
+db_name_value = os.getenv("DB_NAME", "casino_data.db")
+DB_NAME = db_name_value if os.path.isabs(db_name_value) else os.path.join(BASE_DIR, db_name_value)
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "ag-maestro-secret-99")
-app.permanent_session_lifetime = timedelta(minutes=60)
+app.secret_key = os.getenv("FLASK_SECRET_KEY") or uuid.uuid4().hex
+app.permanent_session_lifetime = timedelta(seconds=SESSION_TIMEOUT_SECONDS)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE=os.getenv("SESSION_COOKIE_SAMESITE", "Lax"),
+    SESSION_COOKIE_SECURE=env_bool("SESSION_COOKIE_SECURE", False),
+)
 
 # ESCUDO 2: Candado para evitar colisiones entre la Web y los Sockets
 db_lock = threading.RLock()
@@ -66,7 +88,6 @@ ultimo_backup = 0.0
 
 BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 ROLES_VALIDOS = ['admin', 'supervisor', 'operador', 'consulta']
-SESSION_TIMEOUT_SECONDS = 30 * 60
 MAX_MONTO_ROL = {
     "admin": 1000000.0,
     "supervisor": 250000.0,
@@ -80,10 +101,6 @@ MAX_DIARIO_ROL = {
     "consulta": 0.0
 }
 ROLES_VALIDOS = ["admin", "supervisor", "operador", "consulta"]
-
-app = Flask(__name__)
-app.secret_key = 'AgN30n_M43str0_Sup3r_S3cr3t0_2026'
-app.permanent_session_lifetime = timedelta(seconds=SESSION_TIMEOUT_SECONDS)
 
 # ====================================================================
 # BASE DE DATOS
@@ -410,6 +427,28 @@ def normalizar_monto(valor):
         return None
     return monto
 
+def normalizar_texto_corto(valor, max_len=80):
+    return str(valor or "").strip()[:max_len]
+
+def parsear_limite_decimal(valor):
+    try:
+        numero = float(str(valor or "0").replace(',', '.').strip())
+    except Exception:
+        return None
+    if numero < 0:
+        return None
+    return numero
+
+def validar_fecha_hora_sistema(valor):
+    valor = str(valor or "").strip()
+    if not valor:
+        return None
+    try:
+        dt = datetime.strptime(valor, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
+
 def obtener_nombre_usuario(username):
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10)
@@ -530,8 +569,40 @@ def read_text_file(path):
     except:
         return ""
 
+def obtener_info_rtc():
+    rtc_devices = []
+    rtc_class_dir = "/sys/class/rtc"
+    try:
+        if os.path.isdir(rtc_class_dir):
+            for entry in sorted(os.listdir(rtc_class_dir)):
+                if not entry.startswith("rtc"):
+                    continue
+                name = read_text_file(os.path.join(rtc_class_dir, entry, "name")) or entry
+                rtc_devices.append({
+                    "id": entry,
+                    "name": name,
+                    "dev": f"/dev/{entry}",
+                    "present": os.path.exists(f"/dev/{entry}"),
+                })
+    except Exception:
+        rtc_devices = []
+
+    if not rtc_devices and os.path.exists("/dev/rtc0"):
+        rtc_devices.append({
+            "id": "rtc0",
+            "name": "RTC",
+            "dev": "/dev/rtc0",
+            "present": True,
+        })
+
+    return {
+        "detected": any(device["present"] for device in rtc_devices),
+        "devices": rtc_devices,
+    }
+
 def obtener_estado_host():
     total, used, free = shutil.disk_usage(BASE_DIR)
+    rtc_info = obtener_info_rtc()
     temp_raw = read_text_file("/sys/class/thermal/thermal_zone0/temp")
     temp = "-"
     if temp_raw:
@@ -571,7 +642,9 @@ def obtener_estado_host():
         "disco_libre_gb": round(free / (1024 ** 3), 2),
         "throttled": throttled,
         "db_mb": round(os.path.getsize(DB_NAME) / (1024 ** 2), 2) if os.path.exists(DB_NAME) else 0,
-        "server_time": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        "server_time": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "rtc_detected": rtc_info["detected"],
+        "rtc_devices": rtc_info["devices"],
     }
 
 @app.route('/api/system_time', methods=['GET', 'POST'])
@@ -581,8 +654,10 @@ def api_system_time():
     
     if request.method == 'POST':
         if rol != 'admin': return "Solo el administrador puede cambiar la hora", 403
-        nueva_fecha = request.form.get('fecha_hora') # Esperado: "YYYY-MM-DD HH:MM:SS"
-        if not nueva_fecha: return "Fecha invalida", 400
+        nueva_fecha = validar_fecha_hora_sistema(request.form.get('fecha_hora'))
+        if not nueva_fecha:
+            registrar_accion_admin(usr, "SET_TIME_RECHAZADO", "Formato de fecha invalido", request.remote_addr)
+            return "Fecha invalida. Usa YYYY-MM-DD HH:MM:SS", 400
         
         try:
             # Intentamos ajustar la hora del sistema (requiere privilegios de sudo)
@@ -592,23 +667,30 @@ def api_system_time():
                 res = subprocess.run(["sudo", "timedatectl", "set-time", nueva_fecha], capture_output=True, text=True)
                 if res.returncode != 0:
                     # Fallback a date si timedatectl falla
-                    subprocess.run(["sudo", "date", "-s", nueva_fecha], check=True)
+                    fallback = subprocess.run(["sudo", "date", "-s", nueva_fecha], capture_output=True, text=True)
+                    if fallback.returncode != 0:
+                        raise RuntimeError((fallback.stderr or fallback.stdout or res.stderr or "No se pudo ajustar la hora").strip())
             elif "windows" in sistema:
                 # Fallback para desarrollo en Windows
                 fecha, hora = nueva_fecha.split(" ")
-                subprocess.run(["date", fecha], shell=True)
-                subprocess.run(["time", hora], shell=True)
+                res_fecha = subprocess.run(["date", fecha], shell=True, capture_output=True, text=True)
+                res_hora = subprocess.run(["time", hora], shell=True, capture_output=True, text=True)
+                if res_fecha.returncode != 0 or res_hora.returncode != 0:
+                    raise RuntimeError((res_fecha.stderr or res_hora.stderr or "No se pudo ajustar la hora").strip())
+            else:
+                return "Sistema operativo no soportado para cambio de hora", 400
             
             registrar_accion_admin(usr, "SET_TIME", f"Nueva hora: {nueva_fecha}", request.remote_addr)
             registrar_system_log("SET_TIME", f"Hora del sistema ajustada manualmente por {usr}: {nueva_fecha}")
             return "Hora actualizada correctamente"
         except Exception as e:
+            registrar_system_log("SET_TIME_ERROR", f"No se pudo ajustar la hora: {e}")
             return f"Error al actualizar la hora: {e}", 500
 
     return jsonify({
         "server_time": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         "timezone": str(time.tzname),
-        "rtc_detected": os.path.exists("/dev/rtc0")
+        "rtc_detected": obtener_info_rtc()["detected"],
     })
 
 def registrar_arranque_sistema():
@@ -680,6 +762,15 @@ def misma_terminal_sesion(activo, req):
     datos = datos_sesion_request(req)
     return activo.get("ip") == datos["ip"] and activo.get("ua") == datos["ua"]
 
+def invalidar_sesion(usuario=None, sid=None):
+    if usuario:
+        activo = usuarios_activos.get(usuario)
+        if sid is None or sesion_activa_valida(usuario, sid):
+            usuarios_activos.pop(usuario, None)
+        elif not activo:
+            usuarios_activos.pop(usuario, None)
+    session.clear()
+
 def check_auth(req):
     user_session = session.get('usuario')
     if not user_session: return "none", None, None
@@ -690,7 +781,7 @@ def check_auth(req):
         # Si no es válida por SID pero el usuario existe y no ha pasado el tiempo de timeout,
         # podríamos estar ante una recuperación de sesión o un error de consistencia.
         # Por seguridad, si el SID no coincide, invalidamos.
-        session.clear()
+        invalidar_sesion(user_session, sid)
         return "none", None, None
 
     ahora = time.time()
@@ -698,8 +789,7 @@ def check_auth(req):
     
     # Verificamos timeout de inactividad
     if ahora - float(last) > SESSION_TIMEOUT_SECONDS:
-        usuarios_activos.pop(user_session, None)
-        session.clear()
+        invalidar_sesion(user_session, sid)
         return "none", None, None
         
     session['last_activity'] = ahora
@@ -715,12 +805,16 @@ def check_auth(req):
         if user_session in usuarios_activos:
             if isinstance(usuarios_activos[user_session], dict):
                 usuarios_activos[user_session]["last"] = ahora
+                datos = datos_sesion_request(req)
+                usuarios_activos[user_session]["ip"] = datos["ip"]
+                usuarios_activos[user_session]["ua"] = datos["ua"]
             else:
                 # Migración de formato simple a dict si fuera necesario
                 datos = datos_sesion_request(req)
                 usuarios_activos[user_session] = {"sid": sid, "last": ahora, "ip": datos["ip"], "ua": datos["ua"]}
         return row[0], user_session, row[1]
-    
+
+    invalidar_sesion(user_session, sid)
     return "none", None, None
 
 # ====================================================================
@@ -759,11 +853,12 @@ def login():
                     registrar_accion_admin(u, "LOGIN_FORZADO", "Cierre de sesión previa e ingreso", request.remote_addr)
             
             sid = uuid.uuid4().hex
+            datos = datos_sesion_request(request)
             session.permanent = True
             session['usuario'] = u 
             session['sid'] = sid
             session['last_activity'] = time.time()
-            usuarios_activos[u] = {"sid": sid, "last": time.time()}
+            usuarios_activos[u] = {"sid": sid, "last": time.time(), "ip": datos["ip"], "ua": datos["ua"]}
             registrar_accion_admin(u, "LOGIN_OK", "Ingreso exitoso", request.remote_addr)
             return redirect('/')
         
@@ -776,10 +871,8 @@ def login():
 def logout(): 
     cookie = session.get('usuario')
     sid = session.get('sid')
-    if cookie in usuarios_activos and sesion_activa_valida(cookie, sid):
-        del usuarios_activos[cookie]
     registrar_accion_admin(cookie, "LOGOUT", "Salida de sesion", request.remote_addr)
-    session.clear()
+    invalidar_sesion(cookie, sid)
     return redirect('/login')
 
 def registrar_apagado_limpio():
@@ -835,12 +928,12 @@ def host_status():
     if rol == "none": return "401", 401
     status = obtener_estado_host()
     status["rol"] = rol
-    status["rtc_detected"] = os.path.exists("/dev/rtc0")
     return jsonify(status)
 
 @app.route('/api/reboot_host', methods=['POST'])
 def api_reboot_host():
     rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
     if rol != 'admin': return "403", 403
     try:
         sistema = platform.system().lower()
@@ -872,6 +965,7 @@ def api_system_logs():
 @app.route('/api/db_info', methods=['POST'])
 def api_db_info():
     rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
     if rol != 'admin': return "403", 403
     if not validar_password_actual(usr, request.form.get('password')):
         registrar_accion_admin(usr, "DB_INFO_RECHAZADO", "Password incorrecto", request.remote_addr)
@@ -887,7 +981,7 @@ def api_db_info():
                 tabla_segura = '"' + nombre.replace('"', '""') + '"'
                 c.execute(f"SELECT COUNT(*) FROM {tabla_segura}")
                 tablas.append({"nombre": nombre, "registros": c.fetchone()[0]})
-            except:
+            except Exception:
                 tablas.append({"nombre": nombre, "registros": "Error"})
         conn.close()
     backups =[]
@@ -913,6 +1007,7 @@ def api_db_info():
 @app.route('/api/db_restore', methods=['POST'])
 def api_db_restore():
     rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
     if rol != 'admin': return "403", 403
     if not validar_password_actual(usr, request.form.get('password')):
         registrar_accion_admin(usr, "DB_RESTORE_RECHAZADO", "Password incorrecto", request.remote_addr)
@@ -924,12 +1019,16 @@ def api_db_restore():
     backup_dir_abs = os.path.abspath(BACKUP_DIR)
     if not origen.startswith(backup_dir_abs) or not os.path.exists(origen):
         return "Backup no encontrado", 404
-    crear_backup_db()
-    with db_lock:
-        shutil.copy2(origen, DB_NAME)
-    registrar_accion_admin(usr, "DB_RESTORE", f"Restauro backup {archivo}", request.remote_addr)
-    registrar_system_log("DB_RESTORE", f"Base restaurada desde {archivo} por {usr}")
-    return "Base restaurada. Reinicia la aplicación si notas datos en cache."
+    try:
+        crear_backup_db()
+        with db_lock:
+            shutil.copy2(origen, DB_NAME)
+        registrar_accion_admin(usr, "DB_RESTORE", f"Restauro backup {archivo}", request.remote_addr)
+        registrar_system_log("DB_RESTORE", f"Base restaurada desde {archivo} por {usr}")
+        return "Base restaurada. Reinicia la aplicación si notas datos en cache."
+    except Exception as e:
+        registrar_system_log("DB_RESTORE_ERROR", f"Error restaurando {archivo}: {e}")
+        return f"No se pudo restaurar la base: {e}", 500
 
 @app.route('/api/dashboard_principal')
 def dashboard_principal():
@@ -1123,14 +1222,21 @@ def edit_usr():
 
 @app.route('/api/usuarios/reset', methods=['POST'])
 def rst_pass():
-    if check_auth(request)[0] != 'admin': return "403", 403
-    
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    if rol != 'admin': return "403", 403
+    usuario_obj = normalizar_texto_corto(request.form.get('u'), 40)
+    if not usuario_obj:
+        return "Usuario invalido", 400
     hash_reset = generate_password_hash('1234')
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
-        c.execute("UPDATE usuarios SET password=? WHERE username=?", (hash_reset, request.form.get('u')))
+        c.execute("UPDATE usuarios SET password=? WHERE username=?", (hash_reset, usuario_obj))
+        if c.rowcount <= 0:
+            conn.close()
+            return "Usuario no encontrado", 404
         conn.commit(); conn.close()
-    registrar_accion_admin(session.get('usuario'), "RESET_CLAVE", f"Usuario {request.form.get('u')}", request.remote_addr)
+    registrar_accion_admin(usr, "RESET_CLAVE", f"Usuario {usuario_obj}", request.remote_addr)
     return "OK"
 
 @app.route('/api/usuarios/edit_limits', methods=['POST'])
@@ -1201,52 +1307,67 @@ def ls_usr():
 
 @app.route('/api/usuarios/add', methods=['POST'])
 def add_usr():
-    if check_auth(request)[0] != 'admin': return "403", 403
-    rol_nuevo = request.form.get('r')
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    if rol != 'admin': return "403", 403
+    rol_nuevo = normalizar_texto_corto(request.form.get('r'), 20)
     if rol_nuevo not in ROLES_VALIDOS: return "Rol invalido", 400
-    usuario_obj = request.form.get('u')
-    try:
-        max_operacion = float(str(request.form.get('max_operacion', '0')).replace(',', '.'))
-        max_diario = float(str(request.form.get('max_diario', '0')).replace(',', '.'))
-        if max_operacion < 0 or max_diario < 0:
-            return "Limites invalidos", 400
-    except:
-        max_operacion, max_diario = 0.0, 0.0
+    usuario_obj = normalizar_texto_corto(request.form.get('u'), 40)
+    nombre_real = normalizar_texto_corto(request.form.get('n'), 80)
+    password_nuevo = request.form.get('p') or ""
+    max_operacion = parsear_limite_decimal(request.form.get('max_operacion', '0'))
+    max_diario = parsear_limite_decimal(request.form.get('max_diario', '0'))
+    if not usuario_obj or not nombre_real:
+        return "Usuario y nombre son obligatorios", 400
+    if not password_nuevo.strip():
+        return "Clave invalida", 400
+    if max_operacion is None or max_diario is None:
+        return "Limites invalidos", 400
 
     try:
-        hash_pass = generate_password_hash(request.form.get('p'))
+        hash_pass = generate_password_hash(password_nuevo)
         with db_lock:
             conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
             c.execute("INSERT OR REPLACE INTO usuarios (username, password, rol, nombre_real) VALUES (?,?,?,?)", 
-                      (usuario_obj, hash_pass, rol_nuevo, request.form.get('n')))
+                      (usuario_obj, hash_pass, rol_nuevo, nombre_real))
             c.execute("""INSERT INTO limites_usuario (username, max_operacion, max_diario)
                          VALUES (?,?,?)
                          ON CONFLICT(username) DO UPDATE SET max_operacion=excluded.max_operacion, max_diario=excluded.max_diario""",
                       (usuario_obj, max_operacion, max_diario))
             conn.commit(); conn.close()
-        registrar_accion_admin(session.get('usuario'), "CREAR_USUARIO", f"Usuario {usuario_obj} rol {rol_nuevo} limites op:{max_operacion} dia:{max_diario}", request.remote_addr)
-    except Exception as e: print(f"Error DB Add: {e}")
+        registrar_accion_admin(usr, "CREAR_USUARIO", f"Usuario {usuario_obj} rol {rol_nuevo} limites op:{max_operacion} dia:{max_diario}", request.remote_addr)
+    except Exception as e:
+        registrar_system_log("ADD_USER_ERROR", f"No se pudo guardar usuario {usuario_obj}: {e}")
+        return f"No se pudo guardar el usuario: {e}", 500
     return "OK"
 
 @app.route('/api/usuarios/delete', methods=['POST'])
 def del_usr():
-    if check_auth(request)[0] != 'admin' or request.form.get('u')=='admin': return "403", 403
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    usuario_obj = normalizar_texto_corto(request.form.get('u'), 40)
+    if rol != 'admin' or usuario_obj == 'admin': return "403", 403
+    if not usuario_obj:
+        return "Usuario invalido", 400
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
-        c.execute("DELETE FROM limites_usuario WHERE username=?", (request.form.get('u'),))
-        c.execute("DELETE FROM usuarios WHERE username=?", (request.form.get('u'),))
+        c.execute("DELETE FROM limites_usuario WHERE username=?", (usuario_obj,))
+        c.execute("DELETE FROM usuarios WHERE username=?", (usuario_obj,))
         conn.commit(); conn.close()
-    usuarios_activos.pop(request.form.get('u'), None)
-    registrar_accion_admin(session.get('usuario'), "ELIMINAR_USUARIO", f"Usuario {request.form.get('u')}", request.remote_addr)
+    usuarios_activos.pop(usuario_obj, None)
+    registrar_accion_admin(usr, "ELIMINAR_USUARIO", f"Usuario {usuario_obj}", request.remote_addr)
     return "OK"
 
 @app.route('/api/comando', methods=['POST'])
 def cmd():
     rol, usr, _ = check_auth(request)
-    o, c = request.form.get('o'), request.form.get('c')
+    o = normalizar_texto_corto(request.form.get('o'), 64)
+    c = normalizar_texto_corto(request.form.get('c'), 64)
     targets_raw = request.form.get('targets', '')
     targets = set(x.strip() for x in targets_raw.split(',') if x.strip())
     if rol == "none": return "401", 401
+    if not o or not c:
+        return "Comando invalido", 400
     if c == "REBOOT" and rol != "admin": return "403", 403
     if c == "METERS" and rol == "consulta": return "403", 403
     if o == "MULTI" and not targets:
@@ -1569,11 +1690,13 @@ def contaduria_slot_excel():
 @app.route('/api/limpiar_historial', methods=['POST'])
 def clr_aud():
     global ultimo_cambio_db
-    if check_auth(request)[0] != 'admin': return "403", 403
+    rol, usr, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    if rol != 'admin': return "403", 403
     with db_lock:
         conn=sqlite3.connect(DB_NAME, timeout=10); c=conn.cursor(); c.execute('DELETE FROM transacciones'); conn.commit(); conn.close()
     ultimo_cambio_db = time.time()
-    registrar_accion_admin(session.get('usuario'), "VACIAR_HISTORIAL", "DELETE transacciones", request.remote_addr)
+    registrar_accion_admin(usr, "VACIAR_HISTORIAL", "DELETE transacciones", request.remote_addr)
     return "OK"
 
 @app.route('/api/solicitar_limite', methods=['POST'])
@@ -1657,17 +1780,21 @@ def get_limites_rol():
 
 @app.route('/api/limites_rol/edit', methods=['POST'])
 def edit_limite_rol():
-    if check_auth(request)[0] != 'admin': return "403", 403
-    rol = request.form.get('rol')
-    m_op = float(request.form.get('max_operacion', 0))
-    m_dia = float(request.form.get('max_diario', 0))
+    rol_usuario, usr, _ = check_auth(request)
+    if rol_usuario == "none": return "401", 401
+    if rol_usuario != 'admin': return "403", 403
+    rol = normalizar_texto_corto(request.form.get('rol'), 20)
+    m_op = parsear_limite_decimal(request.form.get('max_operacion', 0))
+    m_dia = parsear_limite_decimal(request.form.get('max_diario', 0))
+    if rol not in ROLES_VALIDOS or m_op is None or m_dia is None:
+        return "Parametros invalidos", 400
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10)
         c = conn.cursor()
         c.execute("INSERT OR REPLACE INTO limites_rol VALUES (?, ?, ?)", (rol, m_op, m_dia))
         conn.commit()
         conn.close()
-    registrar_accion_admin(session.get('usuario'), "EDITAR_LIMITE_ROL", f"Rol {rol}: OP {m_op}, DIA {m_dia}", request.remote_addr)
+    registrar_accion_admin(usr, "EDITAR_LIMITE_ROL", f"Rol {rol}: OP {m_op}, DIA {m_dia}", request.remote_addr)
     return "Límite actualizado"
 
 # ====================================================================
@@ -1675,18 +1802,24 @@ def edit_limite_rol():
 # ====================================================================
 def tcp_handler(sock, slot):
     sock.settimeout(1.0); buf = ""; u_pi = time.time(); ultimo_pong[slot] = time.time()
-    try: sock.sendall(b"PING\r\n")
-    except: pass
+    try:
+        sock.sendall(b"PING\r\n")
+    except Exception as e:
+        registrar_log_slot(slot, "ERROR", f"No se pudo enviar PING inicial: {e}")
     while True:
         if time.time() - u_pi > 3.0:
-            try: sock.sendall(b"PING\r\n"); u_pi = time.time()
-            except: break
+            try:
+                sock.sendall(b"PING\r\n")
+                u_pi = time.time()
+            except Exception as e:
+                registrar_log_slot(slot, "ERROR", f"No se pudo enviar PING: {e}")
+                break
         try:
             raw_data = sock.recv(1024)
             if not raw_data: break
             try:
                 ch = raw_data.decode('utf-8', errors='ignore')
-            except:
+            except Exception:
                 continue
             buf += ch
             while '\n' in buf:
@@ -1734,7 +1867,8 @@ def tcp_handler(sock, slot):
                     ultimos_eventos[slot] = msg_ui
                     tipo_log = "ERROR" if any(x in dat.upper() for x in ["ERROR", "BLOQUEO", "[X]", "FALLA", "TIMEOUT"]) else "EVENTO"
                     registrar_log_slot(slot, tipo_log, dat)
-        except socket.timeout: pass
+        except socket.timeout:
+            pass
         except Exception as e:
             registrar_log_slot(slot, "ERROR", f"Conexion TCP interrumpida: {e}")
             break
@@ -1769,8 +1903,14 @@ def network_loop():
                             conn=sqlite3.connect(DB_NAME, timeout=10); c=conn.cursor(); c.execute("SELECT nombre FROM maquinas WHERE id_esclavo=?", (hid,)); r=c.fetchone(); conn.close()
                         nombres_esclavos[s] = r[0] if r else f"Maquina {s}"
                         threading.Thread(target=tcp_handler, args=(t, s), daemon=True).start()
-                    except: pass
-        except: pass
+                    except Exception as e:
+                        print(f"[-] Error conectando slot {hid} en {a[0]}: {e}")
+        except BlockingIOError:
+            pass
+        except UnicodeDecodeError as e:
+            print(f"[-] Beacon UDP invalido: {e}")
+        except Exception as e:
+            print(f"[-] Error en network_loop: {e}")
 
 if __name__ == '__main__':
     init_db(); registrar_arranque_sistema(); atexit.register(registrar_apagado_limpio); crear_backup_db(); threading.Thread(target=backup_loop, daemon=True).start(); threading.Thread(target=network_loop, daemon=True).start(); app.run(host='0.0.0.0', port=PUERTO_WEB)
