@@ -11,6 +11,7 @@ import platform
 import subprocess
 import atexit
 import json
+import secrets
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, redirect, make_response, send_file, render_template, session
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -44,6 +45,12 @@ def env_bool(name, default=False):
     if value is None:
         return default
     return value.strip().lower() in ("1", "true", "yes", "on")
+
+def env_str(name, default=""):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip()
 
 PUERTO_WEB = int(os.getenv("PUERTO_WEB", 5000))
 PUERTO_UDP = int(os.getenv("PUERTO_UDP", 8081))
@@ -182,13 +189,7 @@ def init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_logs_slot_operation ON logs_slot(operation_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_system_logs_tipo ON system_logs(tipo)")
 
-        c.execute("SELECT count(*) FROM usuarios")
-        if c.fetchone()[0] == 0:
-            hash_admin = generate_password_hash('admin123')
-            hash_operador = generate_password_hash('ope123')
-            
-            c.execute("INSERT INTO usuarios VALUES ('admin', ?, 'admin', 'Administrador Principal')", (hash_admin,))
-            c.execute("INSERT INTO usuarios VALUES ('operador', ?, 'operador', 'Operador de Sala')", (hash_operador,))
+        seed_initial_users(c)
         conn.commit()
         conn.close()
 
@@ -430,6 +431,10 @@ def normalizar_monto(valor):
 def normalizar_texto_corto(valor, max_len=80):
     return str(valor or "").strip()[:max_len]
 
+def generar_password_temporal(length=12):
+    alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+    return "".join(secrets.choice(alfabeto) for _ in range(length))
+
 def parsear_limite_decimal(valor):
     try:
         numero = float(str(valor or "0").replace(',', '.').strip())
@@ -539,6 +544,41 @@ def registrar_accion_admin(usuario, accion, detalle="", ip=""):
             conn.close()
     except Exception as e:
         print(f"[-] Error DB Accion Admin: {e}")
+
+def seed_initial_users(cursor):
+    cursor.execute("SELECT count(*) FROM usuarios")
+    if cursor.fetchone()[0] != 0:
+        return
+
+    admin_user = normalizar_texto_corto(env_str("INIT_ADMIN_USER", "admin"), 40) or "admin"
+    admin_name = normalizar_texto_corto(env_str("INIT_ADMIN_NAME", "Administrador Principal"), 80) or "Administrador Principal"
+    admin_pass = env_str("INIT_ADMIN_PASS")
+    generated_admin_pass = False
+    if not admin_pass:
+        admin_pass = generar_password_temporal()
+        generated_admin_pass = True
+
+    cursor.execute(
+        "INSERT INTO usuarios VALUES (?, ?, 'admin', ?)",
+        (admin_user, generate_password_hash(admin_pass), admin_name),
+    )
+
+    if generated_admin_pass:
+        mensaje = f"Admin inicial creado: usuario={admin_user} clave_temporal={admin_pass}"
+        print(f"[!] {mensaje}")
+        cursor.execute(
+            "INSERT INTO system_logs (fecha_hora, tipo, detalle) VALUES (?, ?, ?)",
+            (datetime.now().strftime("%d/%m/%Y %H:%M:%S"), "INIT_ADMIN_TEMP_PASSWORD", mensaje),
+        )
+
+    operador_user = normalizar_texto_corto(env_str("INIT_OPERATOR_USER"), 40)
+    operador_pass = env_str("INIT_OPERATOR_PASS")
+    operador_name = normalizar_texto_corto(env_str("INIT_OPERATOR_NAME", "Operador de Sala"), 80) or "Operador de Sala"
+    if operador_user and operador_pass:
+        cursor.execute(
+            "INSERT INTO usuarios VALUES (?, ?, 'operador', ?)",
+            (operador_user, generate_password_hash(operador_pass), operador_name),
+        )
 
 def registrar_system_log(tipo, detalle=""):
     try:
@@ -1228,7 +1268,8 @@ def rst_pass():
     usuario_obj = normalizar_texto_corto(request.form.get('u'), 40)
     if not usuario_obj:
         return "Usuario invalido", 400
-    hash_reset = generate_password_hash('1234')
+    nueva_clave = generar_password_temporal()
+    hash_reset = generate_password_hash(nueva_clave)
     with db_lock:
         conn = sqlite3.connect(DB_NAME, timeout=10); c = conn.cursor()
         c.execute("UPDATE usuarios SET password=? WHERE username=?", (hash_reset, usuario_obj))
@@ -1237,7 +1278,7 @@ def rst_pass():
             return "Usuario no encontrado", 404
         conn.commit(); conn.close()
     registrar_accion_admin(usr, "RESET_CLAVE", f"Usuario {usuario_obj}", request.remote_addr)
-    return "OK"
+    return f"Clave temporal para {usuario_obj}: {nueva_clave}"
 
 @app.route('/api/usuarios/edit_limits', methods=['POST'])
 def edit_usr_limits():

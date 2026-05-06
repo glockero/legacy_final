@@ -1125,7 +1125,13 @@ async function crearUsr() {
     loadUsr();
 }
 
-async function rstUsr(u) { if(confirm("Reset clave a '1234'?")) { let fd=new FormData(); fd.append('u', u); await fetch('/api/usuarios/reset', {method:'POST', body:fd}); } }
+async function rstUsr(u) {
+    if(!confirm("Generar una nueva clave temporal para este usuario?")) return;
+    let fd = new FormData();
+    fd.append('u', u);
+    let r = await fetch('/api/usuarios/reset', {method:'POST', body:fd});
+    alert(await r.text());
+}
 async function delUsr(u) { if(confirm("Eliminar?")) { let fd=new FormData(); fd.append('u', u); await fetch('/api/usuarios/delete', {method:'POST', body:fd}); loadUsr(); } }
 
 async function sendCmd(obj, id) {
