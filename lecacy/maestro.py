@@ -40,6 +40,28 @@ def load_env_file(path):
 
 load_env_file(ENV_FILE)
 
+# Imports opcionales para hardware (Pi4). Si faltan, la app arranca igual.
+try:
+    import board
+    import adafruit_dht
+except Exception:
+    board = None
+    adafruit_dht = None
+
+try:
+    from luma.core.interface.serial import i2c as luma_i2c
+    from luma.core.render import canvas
+    from luma.oled.device import sh1106
+except Exception:
+    luma_i2c = None
+    canvas = None
+    sh1106 = None
+
+try:
+    from PIL import ImageFont
+except Exception:
+    ImageFont = None
+
 def env_bool(name, default=False):
     value = os.getenv(name)
     if value is None:
@@ -86,8 +108,24 @@ ultima_conexion = [0.0] * MAX_CLIENTS
 ultima_desconexion = [0.0] * MAX_CLIENTS
 ultima_sas_desconexion =[0.0] * MAX_CLIENTS
 sas_conectado = [False] * MAX_CLIENTS
-ultimos_contadores = [""] * MAX_CLIENTS 
+ultimos_contadores = [""] * MAX_CLIENTS
 heartbeat_info =[{"uptime": "-", "firmware": "-", "ultimo_error": "-"} for _ in range(MAX_CLIENTS)]
+
+# Configuración opcional de hardware (Pi4)
+ENABLE_OLED = env_bool("ENABLE_OLED", True)
+ENABLE_DHT = env_bool("ENABLE_DHT", True)
+I2C_PORT = int(os.getenv("I2C_PORT", 1))
+I2C_ADDRESS = int(os.getenv("I2C_ADDRESS", "0x3C"), 16)
+DHT_PIN_NAME = env_str("DHT_PIN", "D17")
+DHT_READ_INTERVAL = int(os.getenv("DHT_READ_INTERVAL", 3))
+OLED_REFRESH = float(os.getenv("OLED_REFRESH", 1.0))
+
+# Estado global de clima / OLED
+_clima_temp = None
+_clima_hum = None
+_clima_last_read = 0.0
+_dht_device = None
+_oled_device = None
 
 usuarios_activos = {}
 ultimo_cambio_db = time.time()
@@ -617,6 +655,121 @@ def registrar_system_log(tipo, detalle=""):
     except Exception as e:
         print(f"[-] Error DB System Log: {e}")
 
+# ====================================================================
+# HARDWARE: DHT11 + OLED (opcional, fail-safe)
+# ====================================================================
+def _get_ip_address():
+    try:
+        out = subprocess.check_output(["hostname", "-I"], text=True).strip()
+        if out:
+            return out.split()[0]
+    except Exception:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        pass
+    return "Sin IP"
+
+
+def _init_dht():
+    global _dht_device
+    if not ENABLE_DHT or board is None or adafruit_dht is None:
+        return False
+    try:
+        pin = getattr(board, DHT_PIN_NAME, None)
+        if pin is None:
+            print(f"[-] DHT: pin '{DHT_PIN_NAME}' no encontrado en board")
+            return False
+        _dht_device = adafruit_dht.DHT11(pin)
+        print("[+] DHT11 inicializado")
+        return True
+    except Exception as e:
+        print(f"[-] DHT11 no disponible: {e}")
+        _dht_device = None
+        return False
+
+
+def _read_dht_loop():
+    global _clima_temp, _clima_hum, _clima_last_read
+    if _dht_device is None:
+        return
+    while True:
+        try:
+            if time.time() - _clima_last_read >= DHT_READ_INTERVAL:
+                t = _dht_device.temperature
+                h = _dht_device.humidity
+                if t is not None:
+                    _clima_temp = t
+                if h is not None:
+                    _clima_hum = h
+                _clima_last_read = time.time()
+        except Exception:
+            pass
+        time.sleep(1)
+
+
+def _init_oled():
+    global _oled_device
+    if not ENABLE_OLED or luma_i2c is None or sh1106 is None or canvas is None:
+        return False
+    try:
+        serial = luma_i2c(port=I2C_PORT, address=I2C_ADDRESS)
+        _oled_device = sh1106(serial, width=128, height=64)
+        print("[+] OLED SH1106 inicializado")
+        return True
+    except Exception as e:
+        print(f"[-] OLED no disponible: {e}")
+        _oled_device = None
+        return False
+
+
+def _oled_display_loop():
+    if _oled_device is None:
+        return
+    font_small = None
+    font_bold = None
+    font_time = None
+    if ImageFont is not None:
+        try:
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+            font_bold = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 10)
+            font_time = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+        except Exception:
+            pass
+    if font_small is None:
+        font_small = ImageFont.load_default()
+    if font_bold is None:
+        font_bold = ImageFont.load_default()
+    if font_time is None:
+        font_time = ImageFont.load_default()
+
+    while True:
+        try:
+            now = datetime.now()
+            hora = now.strftime("%H:%M:%S")
+            fecha = now.strftime("%d/%m/%Y")
+            ip_addr = _get_ip_address()
+            temp_txt = f"[T] {_clima_temp}C" if _clima_temp is not None else "[T] --"
+            hum_txt = f"[H] {_clima_hum}%" if _clima_hum is not None else "[H] --"
+
+            with canvas(_oled_device) as draw:
+                draw.rectangle(_oled_device.bounding_box, outline="white", fill="black")
+                draw.text((4, 4), hora, font=font_time, fill="white")
+                draw.text((4, 22), fecha, font=font_small, fill="white")
+                draw.text((4, 36), temp_txt, font=font_small, fill="white")
+                draw.text((68, 36), hum_txt, font=font_small, fill="white")
+                draw.text((4, 52), ip_addr[:20], font=font_bold, fill="white")
+        except Exception:
+            pass
+        time.sleep(OLED_REFRESH)
+
+
 def get_boot_time_text():
     try:
         with open("/proc/stat", "r") as f:
@@ -1009,6 +1162,16 @@ def host_status():
     status = obtener_estado_host()
     status["rol"] = rol
     return jsonify(status)
+
+@app.route('/api/clima')
+def api_clima():
+    rol, _, _ = check_auth(request)
+    if rol == "none": return "401", 401
+    return jsonify({
+        "temperatura": _clima_temp,
+        "humedad": _clima_hum,
+        "ip": _get_ip_address(),
+    })
 
 @app.route('/api/reboot_host', methods=['POST'])
 def api_reboot_host():
@@ -2007,4 +2170,17 @@ def network_loop():
             print(f"[-] Error en network_loop: {e}")
 
 if __name__ == '__main__':
-    init_db(); registrar_arranque_sistema(); atexit.register(registrar_apagado_limpio); crear_backup_db(); threading.Thread(target=backup_loop, daemon=True).start(); threading.Thread(target=network_loop, daemon=True).start(); app.run(host='0.0.0.0', port=PUERTO_WEB)
+    init_db()
+    registrar_arranque_sistema()
+    atexit.register(registrar_apagado_limpio)
+    crear_backup_db()
+    threading.Thread(target=backup_loop, daemon=True).start()
+    threading.Thread(target=network_loop, daemon=True).start()
+
+    # Hardware opcional: inicializar y arrancar threads solo si está disponible
+    if _init_dht():
+        threading.Thread(target=_read_dht_loop, daemon=True).start()
+    if _init_oled():
+        threading.Thread(target=_oled_display_loop, daemon=True).start()
+
+    app.run(host='0.0.0.0', port=PUERTO_WEB)

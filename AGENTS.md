@@ -29,7 +29,9 @@
 - There are two standalone test scripts in `lecacy/` that exercise this hardware:
   - `oled_sh1106_clock.py` — displays time, date, hostname, IP and uptime on the OLED.
   - `oled_sh1106_dht11.py` — displays time, date, temperature, humidity and IP on the OLED (reads DHT11 on `board.D17`).
-- These scripts are **not imported by `maestro.py`**; they are utility/validation scripts. If you integrate them into the main app, keep them optional so the controller can still start when the hardware is absent.
+- `maestro.py` now integrates DHT11 and OLED directly (optional, fail-safe). It reads temperature/humidity and exposes them via `/api/clima`, while also driving the OLED display in a background thread.
+- Optional env vars to control hardware: `ENABLE_OLED`, `ENABLE_DHT`, `I2C_PORT`, `I2C_ADDRESS`, `DHT_PIN`, `DHT_READ_INTERVAL`, `OLED_REFRESH`.
+- These standalone scripts are **not imported by `maestro.py`**; they remain as utility/validation scripts.
 
 ## Architecture Notes
 - `maestro.py` is a large single-file app; keep changes minimal and local instead of trying to split/refactor unrelated areas.

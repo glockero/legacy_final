@@ -30,6 +30,22 @@ function updateLiveClock() {
     clock.textContent = liveClockFormatter.format(serverNow);
 }
 
+async function updateClima() {
+    try {
+        const r = await fetch('/api/clima');
+        if(r.status !== 200) return;
+        const d = await r.json();
+        const el = document.getElementById('header-clima');
+        if(!el) return;
+        let parts = [];
+        if(d.temperatura !== null && d.temperatura !== undefined) parts.push(`T: ${d.temperatura}C`);
+        if(d.humedad !== null && d.humedad !== undefined) parts.push(`H: ${d.humedad}%`);
+        el.textContent = parts.join(' | ');
+    } catch(e) {
+        // silencioso
+    }
+}
+
 function ajustarTamanoModal(size = 'compact') {
     const modalBox = document.getElementById('modal-box');
     if(!modalBox) return;
@@ -1608,4 +1624,4 @@ function descargarContaduriaSlot(s, idEsc) { window.location.href = '/contaduria
 
 window.addEventListener('resize', ajustarVistaMaquinas);
 initHeaderSidebar();
-setInterval(tick, 1000); tick(); updateLiveClock(); setInterval(updateLiveClock, 1000); loadDashboard(); loadAlertas(); setTimeout(() => { initResizableColumns(); ajustarVistaMaquinas(); ajustarAuditoriaMobile(); ajustarUsuariosMobile(); }, 500);
+setInterval(tick, 1000); tick(); updateLiveClock(); setInterval(updateLiveClock, 1000); updateClima(); setInterval(updateClima, 5000); loadDashboard(); loadAlertas(); setTimeout(() => { initResizableColumns(); ajustarVistaMaquinas(); ajustarAuditoriaMobile(); ajustarUsuariosMobile(); }, 500);
