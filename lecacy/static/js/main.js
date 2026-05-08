@@ -805,6 +805,11 @@ function prepararAccionesMobile() {
 }
 
 function refinarCardsSlotsMobile() {
+    const mobile = window.innerWidth <= 640;
+    document.querySelectorAll('#tabla-esclavos tr[id^="fila_"]').forEach(tr => {
+        tr.classList.toggle('machine-mobile-card', mobile);
+    });
+
     document.querySelectorAll('#tabla-esclavos td[id^="n_"]').forEach(td => {
         if(td.querySelector('.slot-name-row')) return;
         const strong = td.querySelector('strong');
@@ -823,6 +828,69 @@ function refinarCardsSlotsMobile() {
 
         if(editBtn) row.appendChild(editBtn);
         td.appendChild(row);
+    });
+
+    document.querySelectorAll('#tabla-esclavos tr[id^="fila_"]').forEach(tr => {
+        const selTd = tr.querySelector('td[id^="sel_"]');
+        const nameTd = tr.querySelector('td[id^="n_"]');
+        if(!selTd || !nameTd) return;
+
+        const sourceCheck = selTd.querySelector('.slot-check');
+        let inlineWrap = nameTd.querySelector('.slot-check-inline-wrap');
+        if(!mobile) {
+            if(inlineWrap) inlineWrap.remove();
+            return;
+        }
+        if(!sourceCheck) return;
+
+        const row = nameTd.querySelector('.slot-name-row');
+        if(!row) return;
+
+        if(!inlineWrap) {
+            inlineWrap = document.createElement('label');
+            inlineWrap.className = 'slot-check-inline-wrap';
+            const inlineCheck = sourceCheck.cloneNode(true);
+            inlineCheck.classList.add('slot-check-inline');
+            inlineCheck.addEventListener('change', () => {
+                sourceCheck.checked = inlineCheck.checked;
+                sourceCheck.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            inlineWrap.appendChild(inlineCheck);
+            row.insertBefore(inlineWrap, row.firstChild);
+        }
+
+        const inlineCheck = inlineWrap.querySelector('.slot-check-inline');
+        if(inlineCheck) {
+            inlineCheck.checked = sourceCheck.checked;
+            inlineCheck.disabled = sourceCheck.disabled;
+        }
+    });
+
+    document.querySelectorAll('#tabla-esclavos tr[id^="fila_"]').forEach(tr => {
+        const stateTd = tr.querySelector('td[id^="s_"]');
+        const eventTd = tr.querySelector('td[id^="e_"]');
+        if(stateTd) {
+            const stateText = stateTd.textContent.trim();
+            let stateWrap = stateTd.querySelector('.slot-mobile-status');
+            if(!stateWrap) {
+                stateWrap = document.createElement('div');
+                stateWrap.className = 'slot-mobile-status';
+                stateTd.textContent = '';
+                stateTd.appendChild(stateWrap);
+            }
+            stateWrap.textContent = stateText;
+        }
+        if(eventTd) {
+            const eventText = eventTd.textContent.trim();
+            let eventWrap = eventTd.querySelector('.slot-mobile-event');
+            if(!eventWrap) {
+                eventWrap = document.createElement('div');
+                eventWrap.className = 'slot-mobile-event';
+                eventTd.textContent = '';
+                eventTd.appendChild(eventWrap);
+            }
+            eventWrap.textContent = eventText || 'Sin novedad';
+        }
     });
 }
 
@@ -1176,7 +1244,6 @@ async function tick() {
         let selHtml = `<input type="checkbox" class="slot-check" value="${e.id}" data-slot="${e.slot}" ${estabaSel} ${e.online ? '' : 'disabled'}>`;
         
         let nHtml = `<div class="slot-name-container">
-                        <div class="mobile-check-wrapper">${selHtml}</div>
                         <strong>${e.nombre}</strong>` + (d.rol==='admin'?` <button class="btn-edit" onclick="renombrar(${e.slot},'${e.nombre}')">✏️</button>`:'') + 
                     `</div>`;
         
