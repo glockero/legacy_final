@@ -5,35 +5,36 @@ h1, h2 { color: #0056b3; margin: 0; }
 .header-title { display:flex; align-items:center; min-width:0; }
 .header-status-wrap { display:flex; align-items:center; gap:12px; margin-left:auto; }
 .header-live-clock {
-    order:2;
-    margin-left:auto;
-    display:flex;
-    flex-direction:column;
-    align-items:flex-end;
-    justify-content:center;
-    min-width:0;
-    max-width:172px;
-    padding:6px 10px;
-    border-radius:14px;
-    background: linear-gradient(180deg, #ffffff 0%, #eef4ff 100%);
-    border:1px solid rgba(37, 99, 235, 0.16);
-    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
-    line-height:1.15;
+    order: 2;
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 18px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    line-height: 1.3;
+    flex-shrink: 0;
+    width: fit-content;
 }
-.header-live-clock-label { font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; }
+.header-live-clock-label { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 1px; }
 .header-live-clock-value {
-    font-size:12px;
-    font-weight:700;
-    color:#111111;
-    white-space:nowrap;
-    overflow:hidden;
-    text-overflow:clip;
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
 }
 .header-clima {
-    font-size:12px;
-    font-weight:600;
-    color:#374151;
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+    margin-top: 4px;
+    white-space: nowrap;
+    display: block;
 }
 .header-bar > h1 { min-width:0; }
 .header-info { position:fixed; top:64px; left:0; bottom:0; width:280px; display:flex; flex-direction:column; align-items:stretch; gap:14px; padding:16px; background:#fff; border-right:1px solid #d4d9df; overflow-y:auto; }
@@ -691,9 +692,9 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
         background: #fff;
     }
     .header-info.active { transform: translateX(0); }
-    .header-live-clock { max-width:200px; padding:6px 8px; }
-    .header-live-clock-value { font-size:13px; font-weight:700; }
-    .header-clima { font-size:10px; font-weight:400; }
+    .header-live-clock { padding: 4px 10px; }
+    .header-live-clock-value { font-size: 13px; font-weight: 700; }
+    .header-clima { font-size: 11px; font-weight: 600; }
     .header-status-wrap { gap:8px; }
     .header-info .side-nav { border-radius: 22px; padding: 8px; }
     .header-info .side-nav-btn { font-size: 18px; padding: 15px; margin-bottom: 0; min-height: 64px; }
@@ -744,46 +745,90 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
     .header-bar { gap: 8px; }
     .header-live-clock {
         min-width: 0;
-        max-width: 165px;
-        padding: 5px 7px;
-        border-radius: 12px;
+        padding: 4px 8px;
+        border-radius: 6px;
     }
     .header-live-clock-value { font-size: 12px; font-weight: 700; }
-    .header-clima { font-size: 9px; font-weight: 400; }
+    .header-clima { font-size: 10px; font-weight: 600; }
     
     /* Transformación de tablas a tarjetas */
     .slots-table thead, .audit-table thead, .users-table thead, .limites-rol-table thead { display: none; }
-    .slots-table tr, .audit-table tr, .users-table tr, .limites-rol-table tr { 
-        display: block; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 12px; padding: 15px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    
+    .slots-table tr { 
+        display: grid; 
+        grid-template-columns: 48px 1fr; 
+        align-items: stretch;
+        margin-bottom: 12px; 
+        border: 1px solid #e2e8f0; 
+        border-radius: 12px; 
+        padding: 0; 
+        background: #fff; 
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        overflow: hidden;
     }
-    .slots-table td, .audit-table td, .users-table td, .limites-rol-table td { 
-        display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; text-align: right;
+    .slots-table td { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        border-bottom: 1px solid #f1f5f9; 
+        padding: 8px 12px; 
+        text-align: right; 
+        font-size: 0.85rem;
+        grid-column: 1 / -1; 
     }
-    .slots-table td:last-child, .audit-table td:last-child, .users-table td:last-child, .limites-rol-table td:last-child { border-bottom: 0; flex-direction: column; align-items: stretch; padding-top: 15px; }
+    .slots-table td[id^="sel_"] { 
+        grid-column: 1; 
+        border-bottom: 2px solid #3b82f6; 
+        background: #f8fafc;
+        justify-content: center;
+        padding: 0;
+        margin: 0;
+    }
+    .slots-table td[id^="n_"] { 
+        grid-column: 2; 
+        border-bottom: 2px solid #3b82f6; 
+        background: #f8fafc;
+        justify-content: flex-start;
+        padding: 10px 12px 10px 4px;
+        margin: 0;
+    }
+    .slots-table td[id^="sel_"] input[type="checkbox"] {
+        transform: scale(1.4);
+    }
+    .slots-table td[id^="n_"] .slot-name-text { 
+        font-size: 1.05rem; 
+        font-weight: 800; 
+        color: #1e40af; 
+    }
+    .slots-table td[id^="n_"]::before { display: none; }
+    .slots-table td[id^="n_"] .btn-edit { margin: 0 0 0 12px !important; }
+    
+    .slots-table td[id^="s_"], .slots-table td[id^="e_"] { padding: 10px 12px; }
+
+    .slots-table td:last-child { 
+        border-bottom: 0; 
+        flex-direction: column; 
+        align-items: stretch; 
+        padding: 12px;
+        background: #fcfdfe;
+    }
     .slots-table td::before, .audit-table td::before, .users-table td::before, .limites-rol-table td::before { 
-        content: attr(data-label); font-weight: bold; color: #555; text-align: left; margin-right: 15px; font-size: 0.9rem;
+        content: attr(data-label); font-weight: 700; color: #64748b; text-align: left; margin-right: 10px; font-size: 0.8rem; text-transform: uppercase;
     }
     .slots-table td[data-label=""] { justify-content: flex-end; }
     .slots-table td[data-label=""]::before { display: none; }
-    .slots-table td[id^="sel_"] { justify-content: flex-start; text-align: left; }
-    .slots-table td[id^="sel_"] input[type="checkbox"] {
-        transform: scale(1.5);
-        transform-origin: left center;
-        margin-left: 4px;
-    }
-    .slots-table td[id^="n_"] { align-items: center; }
-    .slots-table td[id^="n_"] > .slot-name-row { width: 100%; min-width: 0; }
-    .slots-table td[id^="n_"] .slot-name-text { min-width: 0; }
-    .slots-table td[id^="n_"] .btn-edit {
-        width: auto !important;
-        min-width: 36px;
-        margin: 0 0 0 8px !important;
-        padding: 4px 6px;
-        flex-shrink: 0;
-    }
+    .slots-table td[data-label="Accion"]::before { display: none; }
     
-    .slots-table td input[type="text"] { width: 100% !important; margin: 10px 0; font-size: 16px; }
-    .slots-table td button:not(.btn-edit), .users-table td button, .audit-table td button { width: 100%; margin: 6px 0 !important; font-size: 16px; }
+    .slots-table td input[type="text"] { width: 100% !important; margin: 4px 0; font-size: 15px; height: 38px; }
+    .slots-table td button:not(.btn-edit), .users-table td button, .audit-table td button { width: 100%; margin: 4px 0 !important; font-size: 15px; min-height: 40px; }
+
+    .audit-table tr, .users-table tr, .limites-rol-table tr { 
+        display: block; margin-bottom: 12px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; background: #fff; 
+    }
+    .audit-table td, .users-table td, .limites-rol-table td { 
+        display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding: 6px 0; text-align: right; font-size: 0.85rem;
+    }
+    .audit-table td:last-child, .users-table td:last-child, .limites-rol-table td:last-child { border-bottom: 0; flex-direction: column; align-items: stretch; padding-top: 10px; }
     .modal-scroll-table {
         max-height: none;
         overflow: visible;

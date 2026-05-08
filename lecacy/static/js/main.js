@@ -38,8 +38,9 @@ async function updateClima() {
         const el = document.getElementById('header-clima');
         if(!el) return;
         let parts = [];
-        if(d.temperatura !== null && d.temperatura !== undefined) parts.push(`T: ${d.temperatura}C`);
+        if(d.temperatura !== null && d.temperatura !== undefined) parts.push(`T: ${d.temperatura}°`);
         if(d.humedad !== null && d.humedad !== undefined) parts.push(`H: ${d.humedad}%`);
+        if(d.ip) parts.push(`IP: ${d.ip}`);
         el.textContent = parts.join(' | ');
     } catch(e) {
         // silencioso
@@ -419,6 +420,7 @@ async function abrirEstadoHost() {
     document.getElementById('modal-content').innerHTML = `
         <div class="dash-grid">
           <div class="dash-card"><strong>Hora Servidor</strong><span style="color:#2563eb; font-weight:bold;">${d.server_time}</span></div>
+          <div class="dash-card"><strong>IP Host</strong><span style="color:#16a34a; font-weight:bold;">${d.ip}</span></div>
           <div class="dash-card"><strong>RTC Hardware</strong><span>${rtcIcon}</span></div>
           <div class="dash-card"><strong>Host</strong><span>${d.host}</span></div>
           <div class="dash-card"><strong>Sistema</strong><span>${d.sistema}</span></div>
@@ -784,14 +786,16 @@ function prepararAccionesMobile() {
             inp.style.width = "auto";
             inp.style.flex = "2"; 
             inp.style.minWidth = "0"; 
+            inp.style.height = "42px";
             
             let btn = cargarBtn.cloneNode(true);
             btn.style.flex = "1";
             btn.style.width = "auto";
-            btn.style.fontSize = "20px"; 
+            btn.style.height = "42px";
+            btn.style.fontSize = "18px"; 
             
             cargarHtml = `
-                <div style="display:flex; gap:8px; margin-bottom:10px; width:100%;">
+                <div style="display:flex; gap:6px; margin-bottom:8px; width:100%;">
                     ${inp.outerHTML}
                     ${btn.outerHTML}
                 </div>`;
@@ -799,7 +803,7 @@ function prepararAccionesMobile() {
 
         td.innerHTML = `
             ${cargarHtml}
-            <button class="btn-info" style="width:100%; font-weight:bold; background:#2563eb;" onclick="abrirAccionesDesdeFila(${slot})">ACCIONES</button>`;
+            <button class="btn-info" style="width:100%; height:42px; font-weight:bold; background:#2563eb; font-size:14px; letter-spacing:0.05em;" onclick="abrirAccionesDesdeFila(${slot})">MÁS ACCIONES</button>`;
         td.dataset.mobileButton = '1';
     });
 }
@@ -831,9 +835,10 @@ function abrirAccionesDesdeFila(slot) {
     const actionsCell = document.getElementById('a_' + slot);
     if(!row || !actionsCell) return;
     const nameCell = document.getElementById('n_' + slot);
-    const stateCell = document.getElementById('s_' + slot);
-    const eventCell = document.getElementById('e_' + slot);
     
+    let idStr = row.dataset.idEsc || "-";
+    let nombre = nameCell ? (nameCell.querySelector('strong') ? nameCell.querySelector('strong').textContent : nameCell.textContent.trim()) : slot;
+
     let tempDiv = document.createElement('div');
     tempDiv.innerHTML = actionsCell.dataset.fullActions || actionsCell.innerHTML;
     
@@ -843,16 +848,13 @@ function abrirAccionesDesdeFila(slot) {
     if(btn) btn.remove();
 
     let actions = tempDiv.innerHTML;
-    actions = actions.replace('display:flex;', 'display:grid; grid-template-columns:1fr 1fr; gap:10px;');
+    // Usamos 3 columnas para que los 6 botones queden en 2 filas
+    actions = actions.replace(/display:\s*flex;/g, 'display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;');
     
-    document.getElementById('modal-title').innerText = "Acciones de maquina";
+    ajustarTamanoModal('medium');
+    document.getElementById('modal-title').innerText = `Acciones: ${nombre} (${idStr})`;
     document.getElementById('modal-content').innerHTML = `
-        <div class="dash-grid" style="margin-top:0; margin-bottom:15px;">
-            <div class="dash-card"><strong>SLOT</strong><span>${nameCell ? nameCell.textContent.trim() : slot}</span></div>
-            <div class="dash-card"><strong>Estado</strong><span>${stateCell ? stateCell.textContent.trim() : '-'}</span></div>
-            <div class="dash-card"><strong>Evento</strong><span>${eventCell ? eventCell.textContent.trim() : '-'}</span></div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">${actions}</div>`;
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; padding-top:10px;">${actions}</div>`;
     document.getElementById('modal-overlay').style.display = 'flex';
 }
 
@@ -1199,11 +1201,13 @@ async function tick() {
             tr = document.createElement('tr'); tr.id = idF; 
             tr.setAttribute('data-o', e.online);
             tr.setAttribute('data-sas', e.sas); 
+            tr.dataset.idEsc = e.id; 
             
             tr.className = obtenerClaseFilaMaquina(e.online, e.sas);
             tr.innerHTML = `<td data-label="" style="text-align: right;" id="sel_${e.slot}">${selHtml}</td><td data-label="Slot">${e.slot}</td><td data-label="Nombre" id="n_${e.slot}">${nHtml}</td><td data-label="Estado" id="s_${e.slot}" class="${e.online?'estado-ok':'estado-error'}">${estTxt}</td><td data-label="Evento" id="e_${e.slot}">${e.evento}</td><td data-label="Acción" id="a_${e.slot}">${actHtml}</td>`;
             tb.appendChild(tr);
         } else {
+            tr.dataset.idEsc = e.id;
             document.getElementById('sel_'+e.slot).innerHTML = selHtml;
             document.getElementById('n_'+e.slot).innerHTML = nHtml;
             document.getElementById('s_'+e.slot).innerHTML = estTxt;
