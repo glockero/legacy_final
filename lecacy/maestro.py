@@ -848,7 +848,6 @@ def obtener_estado_host():
         log_runtime_warning("No se pudo leer throttling", e)
     return {
         "host": platform.node() or "-",
-        "ip": _get_ip_address(),
         "sistema": platform.platform(),
         "arquitectura": platform.machine(),
         "python": platform.python_version(),
