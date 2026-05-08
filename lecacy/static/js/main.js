@@ -736,10 +736,10 @@ function normalizarTablaMaquinas() {
     if(!table) return;
     const headers = table.querySelectorAll('thead th');
     if(headers.length >= 6) {
-        headers[2].textContent = 'SLOT';
+        headers[2].textContent = 'Slot';
         headers[1].remove();
     } else if(headers.length >= 5) {
-        headers[1].textContent = 'SLOT';
+        headers[1].textContent = 'Slot';
         headers[4].textContent = 'Accion';
     }
     const loadingRow = document.getElementById('cargando');
@@ -750,7 +750,7 @@ function normalizarTablaMaquinas() {
         const cells = tr.children;
         if(cells.length >= 6) cells[1].remove();
         if(tr.children[0]) tr.children[0].setAttribute('data-label', '');
-        if(tr.children[1]) tr.children[1].setAttribute('data-label', 'SLOT');
+        if(tr.children[1]) tr.children[1].setAttribute('data-label', 'Slot');
         if(tr.children[2]) tr.children[2].setAttribute('data-label', 'Estado');
         if(tr.children[3]) tr.children[3].setAttribute('data-label', 'Evento');
         if(tr.children[4]) tr.children[4].setAttribute('data-label', 'Accion');
@@ -1172,7 +1172,13 @@ async function tick() {
     d.esclavos.forEach(e => {
         let idF = 'fila_'+e.slot; activos.push(idF);
         let tr = document.getElementById(idF);
-        let nHtml = `<strong>${e.nombre}</strong>` + (d.rol==='admin'?` <button class="btn-edit" onclick="renombrar(${e.slot},'${e.nombre}')">✏️</button>`:'');
+        let estabaSel = document.querySelector(`.slot-check[data-slot="${e.slot}"]`)?.checked ? 'checked' : '';
+        let selHtml = `<input type="checkbox" class="slot-check" value="${e.id}" data-slot="${e.slot}" ${estabaSel} ${e.online ? '' : 'disabled'}>`;
+        
+        let nHtml = `<div class="slot-name-container">
+                        <div class="mobile-check-wrapper">${selHtml}</div>
+                        <strong>${e.nombre}</strong>` + (d.rol==='admin'?` <button class="btn-edit" onclick="renombrar(${e.slot},'${e.nombre}')">✏️</button>`:'') + 
+                    `</div>`;
         
         let estTxt = `${e.online ? '🟢' : '🔴'} ${e.id} / ${e.online ? (e.sas ? '🟢' : '🔴') : '⚪'} SAS`;
         let sasReady = e.online && e.sas; 
@@ -1181,9 +1187,7 @@ async function tick() {
         let styleBtn = sasReady ? '' : 'background-color:#6c757d; opacity:0.5; cursor:not-allowed;';
         let disInp = sasReady ? '' : 'disabled';
         let styleInp = `width:70px; margin:0;${sasReady ? '' : ' background-color:#e9ecef; cursor:not-allowed;'}`;
-        let estabaSel = document.querySelector(`.slot-check[data-slot="${e.slot}"]`)?.checked ? 'checked' : '';
-        let selHtml = `<input type="checkbox" class="slot-check" value="${e.id}" data-slot="${e.slot}" ${estabaSel} ${e.online ? '' : 'disabled'}>`;
-
+        
         let actHtml = `<div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
                  <input type="text" id="cmd_${e.slot}" style="${styleInp}" placeholder="$" ${disInp}> 
                  <button onclick="sendCmd('${e.id}','cmd_${e.slot}')" ${disBtn} style="${styleBtn}">💸</button> 

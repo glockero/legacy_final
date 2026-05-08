@@ -191,6 +191,7 @@ h1, h2 { color: #0056b3; margin: 0; }
     .system-details[open] .system-actions { display: flex; animation: slideDown 0.3s ease; }
 }
 @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+.mobile-check-wrapper { display: none; }
 .user-shortcut { background:none; border:none; padding:0; margin:0; min-height:0; color:#0056b3; font-weight:700; text-align:left; cursor:pointer; }
 .user-shortcut:hover { opacity:1; text-decoration:underline; }
 #label-rol { display:none; }
@@ -754,39 +755,41 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
     .header-live-clock-value { font-size: 12px; }
     .header-clima { font-size: 10px; }
     
+    .mobile-hide { display: none !important; }
+
     /* Transformación de tablas a tarjetas */
     .slots-table thead, .audit-table thead, .users-table thead, .limites-rol-table thead { display: none; }
     .slots-table tr, .audit-table tr, .users-table tr, .limites-rol-table tr { 
-        display: block; margin-bottom: 15px; border: 1px solid #ddd; border-radius: 12px; padding: 15px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        display: block; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .slots-table td, .audit-table td, .users-table td, .limites-rol-table td { 
-        display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; text-align: right;
+        display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 6px 0; text-align: right; font-size: 0.85rem;
     }
-    .slots-table td:last-child, .audit-table td:last-child, .users-table td:last-child, .limites-rol-table td:last-child { border-bottom: 0; flex-direction: column; align-items: stretch; padding-top: 15px; }
+    .slots-table td:last-child, .audit-table td:last-child, .users-table td:last-child, .limites-rol-table td:last-child { border-bottom: 0; flex-direction: column; align-items: stretch; padding-top: 10px; }
     .slots-table td::before, .audit-table td::before, .users-table td::before, .limites-rol-table td::before { 
-        content: attr(data-label); font-weight: bold; color: #555; text-align: left; margin-right: 15px; font-size: 0.9rem;
+        content: attr(data-label); font-weight: bold; color: #555; text-align: left; margin-right: 15px; font-size: 0.8rem;
     }
-    .slots-table td[data-label=""] { justify-content: flex-end; }
-    .slots-table td[data-label=""]::before { display: none; }
-    .slots-table td[id^="sel_"] { justify-content: flex-start; text-align: left; }
-    .slots-table td[id^="sel_"] input[type="checkbox"] {
-        transform: scale(1.5);
-        transform-origin: left center;
-        margin-left: 4px;
-    }
-    .slots-table td[id^="n_"] { align-items: center; }
-    .slots-table td[id^="n_"] > .slot-name-row { width: 100%; min-width: 0; }
-    .slots-table td[id^="n_"] .slot-name-text { min-width: 0; }
-    .slots-table td[id^="n_"] .btn-edit {
-        width: auto !important;
-        min-width: 36px;
-        margin: 0 0 0 8px !important;
-        padding: 4px 6px;
-        flex-shrink: 0;
-    }
+    .slots-table td[data-label="Slot"]::before, 
+    .slots-table td[data-label="SLOT"]::before { display: none; }
     
-    .slots-table td input[type="text"] { width: 100% !important; margin: 10px 0; font-size: 16px; }
-    .slots-table td button:not(.btn-edit), .users-table td button, .audit-table td button { width: 100%; margin: 6px 0 !important; font-size: 16px; }
+    /* Ocultar checkbox original en móvil y mostrar el nuevo junto al nombre */
+    .slots-table td[id^="sel_"] { display: none; }
+    
+    .mobile-check-wrapper { display: flex !important; align-items: center; margin-right: 10px; }
+    .mobile-check-wrapper .slot-check { transform: scale(1.3); margin: 0; }
+
+    .slot-name-container { 
+        display: flex; 
+        align-items: center; 
+        width: 100%; 
+        justify-content: flex-start;
+    }
+
+    .slots-table td[id^="n_"] { align-items: center; justify-content: flex-start; }
+    .slots-table td[id^="n_"]::before { margin-right: auto; } 
+    
+    .slots-table td input[type="text"] { width: 100% !important; margin: 8px 0; font-size: 14px; min-height: 38px; }
+    .slots-table td button:not(.btn-edit), .users-table td button, .audit-table td button { width: 100%; margin: 4px 0 !important; font-size: 14px; min-height: 38px; }
     .modal-scroll-table {
         max-height: none;
         overflow: visible;
