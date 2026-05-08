@@ -11,7 +11,6 @@ const liveClockFormatter = new Intl.DateTimeFormat('es-AR', {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: false
 });
 
@@ -40,6 +39,7 @@ async function updateClima() {
         let parts = [];
         if(d.temperatura !== null && d.temperatura !== undefined) parts.push(`T: ${d.temperatura}C`);
         if(d.humedad !== null && d.humedad !== undefined) parts.push(`H: ${d.humedad}%`);
+        if(d.ip) parts.push(`IP: ${d.ip}`);
         el.textContent = parts.join(' | ');
     } catch(e) {
         // silencioso
