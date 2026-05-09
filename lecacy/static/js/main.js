@@ -607,29 +607,24 @@ async function loadDashboard() {
         let d = await r.json();
         ultimoDashboard = d;
         document.getElementById('dash-principal').innerHTML = `
-            <div class="dash-card dash-card-premium dash-card-money">
-                <span class="dash-kicker">Ultima hora</span>
-                <strong>Monto 1h</strong>
+            <div class="dash-card dash-card-premium dash-card-money dash-card-inline">
+                <span class="dash-inline-label">1h</span>
                 <span class="dash-value">$${Number(d.montos.hora || 0).toFixed(2)}</span>
             </div>
-            <div class="dash-card dash-card-premium dash-card-money">
-                <span class="dash-kicker">Ventana diaria</span>
-                <strong>Monto 24hs</strong>
+            <div class="dash-card dash-card-premium dash-card-money dash-card-inline">
+                <span class="dash-inline-label">24hs</span>
                 <span class="dash-value">$${Number(d.montos.dia || 0).toFixed(2)}</span>
             </div>
-            <div class="dash-card dash-card-premium dash-card-money">
-                <span class="dash-kicker">Tendencia mensual</span>
-                <strong>Monto ultimo mes</strong>
+            <div class="dash-card dash-card-premium dash-card-money dash-card-inline">
+                <span class="dash-inline-label">Mes</span>
                 <span class="dash-value">$${Number(d.montos.mes || 0).toFixed(2)}</span>
             </div>
-            <div class="dash-card dash-card-premium dash-card-status clickable" onclick="abrirModalSlots('conectados')">
-                <span class="dash-kicker">Estado de red</span>
-                <strong>Slots conectados</strong>
+            <div class="dash-card dash-card-premium dash-card-status dash-card-inline clickable" onclick="abrirModalSlots('conectados')">
+                <span class="dash-inline-label">Online</span>
                 <span class="dash-value">${d.slots.conectados}</span>
             </div>
-            <div class="dash-card dash-card-premium dash-card-alert clickable" onclick="abrirModalSlots('sas_desconectado')">
-                <span class="dash-kicker">Revision requerida</span>
-                <strong>SAS desconectado</strong>
+            <div class="dash-card dash-card-premium dash-card-alert dash-card-inline clickable" onclick="abrirModalSlots('sas_desconectado')">
+                <span class="dash-inline-label">SAS off</span>
                 <span class="dash-value">${d.slots.sas_desconectado}</span>
             </div>`;
         document.getElementById('chart-global').innerHTML = barRows(d.globales, 'cantidad', 'periodo');
@@ -642,11 +637,11 @@ async function loadAlertas() {
         if(r.status === 401) return;
         let d = await r.json();
         document.getElementById('dash-alertas').innerHTML = `
-            <div class="alert-card ${d.slots_offline ? 'danger' : ''}"><strong>Slots offline</strong><span class="alert-num">${d.slots_offline}</span></div>
-            <div class="alert-card ${d.sas_off ? 'danger' : ''}"><strong>SAS OFF</strong><span class="alert-num">${d.sas_off}</span></div>
-            <div class="alert-card ${d.cargas_fallidas_24h ? 'danger' : ''}"><strong>Cargas fallidas 24hs</strong><span class="alert-num">${d.cargas_fallidas_24h}</span></div>
-            <div class="alert-card ${d.sin_heartbeat ? 'danger' : ''}"><strong>Sin heartbeat</strong><span class="alert-num">${d.sin_heartbeat}</span></div>
-            <div class="alert-card clickable ${d.solicitudes_pendientes > 0 ? 'danger' : ''}" onclick="abrirModalSolicitudes()"><strong>Solicitudes Crédito</strong><span class="alert-num">${d.solicitudes_pendientes}</span></div>`;
+            <div class="alert-card alert-card-inline ${d.slots_offline ? 'danger' : ''}"><span class="alert-inline-label">Offline</span><span class="alert-num">${d.slots_offline}</span></div>
+            <div class="alert-card alert-card-inline ${d.sas_off ? 'danger' : ''}"><span class="alert-inline-label">SAS off</span><span class="alert-num">${d.sas_off}</span></div>
+            <div class="alert-card alert-card-inline ${d.cargas_fallidas_24h ? 'danger' : ''}"><span class="alert-inline-label">Fallidas 24hs</span><span class="alert-num">${d.cargas_fallidas_24h}</span></div>
+            <div class="alert-card alert-card-inline ${d.sin_heartbeat ? 'danger' : ''}"><span class="alert-inline-label">Heartbeat</span><span class="alert-num">${d.sin_heartbeat}</span></div>
+            <div class="alert-card alert-card-inline clickable ${d.solicitudes_pendientes > 0 ? 'danger' : ''}" onclick="abrirModalSolicitudes()"><span class="alert-inline-label">Solicitudes</span><span class="alert-num">${d.solicitudes_pendientes}</span></div>`;
     } catch(e) {}
 }
 
