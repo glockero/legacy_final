@@ -5,6 +5,7 @@ let modalModo = "";
 let modalConfirmAction = null;
 let modalInputAction = null;
 let pendingDbRestoreFile = null;
+let alertasMobileOpen = false;
 const liveClockFormatter = new Intl.DateTimeFormat('es-AR', {
     day: '2-digit',
     month: '2-digit',
@@ -636,6 +637,27 @@ async function loadAlertas() {
         let r = await fetch('/api/alertas');
         if(r.status === 401) return;
         let d = await r.json();
+        const mobile = window.innerWidth <= 640;
+        if(mobile) {
+            const totalAlertas = Number(d.slots_offline || 0) + Number(d.sas_off || 0) + Number(d.cargas_fallidas_24h || 0) + Number(d.sin_heartbeat || 0) + Number(d.solicitudes_pendientes || 0);
+            const currentPanel = document.querySelector('#dash-alertas .alert-mobile-panel');
+            if(currentPanel) alertasMobileOpen = currentPanel.open;
+            document.getElementById('dash-alertas').innerHTML = `
+                <details class="alert-mobile-panel" ${alertasMobileOpen ? 'open' : ''}>
+                    <summary>Ver alertas (${totalAlertas})</summary>
+                    <div class="alert-mobile-list">
+                        <div class="alert-mobile-item ${d.slots_offline ? 'danger' : ''}"><span>Offline</span><strong>${d.slots_offline}</strong></div>
+                        <div class="alert-mobile-item ${d.sas_off ? 'danger' : ''}"><span>SAS off</span><strong>${d.sas_off}</strong></div>
+                        <div class="alert-mobile-item ${d.cargas_fallidas_24h ? 'danger' : ''}"><span>Fallidas 24hs</span><strong>${d.cargas_fallidas_24h}</strong></div>
+                        <div class="alert-mobile-item ${d.sin_heartbeat ? 'danger' : ''}"><span>Heartbeat</span><strong>${d.sin_heartbeat}</strong></div>
+                        <button type="button" class="alert-mobile-item alert-mobile-action ${d.solicitudes_pendientes > 0 ? 'danger' : ''}" onclick="abrirModalSolicitudes()"><span>Solicitudes</span><strong>${d.solicitudes_pendientes}</strong></button>
+                    </div>
+                </details>`;
+            const nextPanel = document.querySelector('#dash-alertas .alert-mobile-panel');
+            if(nextPanel) nextPanel.addEventListener('toggle', () => { alertasMobileOpen = nextPanel.open; });
+            return;
+        }
+
         document.getElementById('dash-alertas').innerHTML = `
             <div class="alert-card alert-card-inline ${d.slots_offline ? 'danger' : ''}"><span class="alert-inline-label">Offline</span><span class="alert-num">${d.slots_offline}</span></div>
             <div class="alert-card alert-card-inline ${d.sas_off ? 'danger' : ''}"><span class="alert-inline-label">SAS off</span><span class="alert-num">${d.sas_off}</span></div>

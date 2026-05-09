@@ -505,6 +505,61 @@ button:active { transform: scale(0.98); }
     justify-content:space-between;
     gap:10px;
 }
+.alert-mobile-panel {
+    width: 100%;
+    border: 1px solid #dbe4f0;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow: 0 10px 24px rgba(148, 163, 184, 0.12);
+    overflow: hidden;
+}
+.alert-mobile-panel summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 14px 16px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #1e3a8a;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.alert-mobile-panel summary::-webkit-details-marker {
+    display: none;
+}
+.alert-mobile-list {
+    display: grid;
+    gap: 8px;
+    padding: 0 12px 12px;
+}
+.alert-mobile-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ffe08a;
+    border-radius: 10px;
+    background: #fff3cd;
+    color: #604600;
+    font-size: 12px;
+    font-weight: 700;
+}
+.alert-mobile-item strong {
+    font-size: 18px;
+    line-height: 1;
+}
+.alert-mobile-item.danger {
+    background: #f8d7da;
+    border-color: #f1aeb5;
+    color: #842029;
+}
+.alert-mobile-action {
+    border-width: 1px;
+    border-style: solid;
+    cursor: pointer;
+    text-align: left;
+}
 .alert-inline-label {
     font-size:12px;
     font-weight:800;
