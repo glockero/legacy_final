@@ -381,6 +381,8 @@ button:active { transform: scale(0.98); }
 .slot-name-row { display:flex; align-items:center; gap:8px; width:100%; min-width:0; }
 .slot-name-text { flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .slot-name-text strong { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.slot-name-actions { display:none; }
+.slot-mobile-action-trigger { display:none; }
 .slot-name-row .btn-edit { flex:0 0 auto; margin-left:auto; }
 .estado-ok { color: green; font-weight: bold; }
 .estado-error { color: #dc3545; font-weight: bold; }
@@ -820,7 +822,7 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
     .slots-table tr.machine-mobile-card td {
         display: grid;
         grid-template-columns: minmax(78px, 90px) minmax(0, 1fr);
-        align-items: start;
+        align-items: center;
         gap: 8px 12px;
         padding: 8px 0;
         text-align: left;
@@ -845,12 +847,17 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
     }
     .slots-table tr.machine-mobile-card td[id^="n_"]::before { display: none; }
     .slots-table tr.machine-mobile-card td[id^="n_"],
+    .slots-table tr.machine-mobile-card td[id^="a_"],
     .slots-table tr.machine-mobile-card td:last-child {
+        grid-template-columns: 1fr;
         align-items: stretch;
     }
     .slots-table tr.machine-mobile-card td:last-child {
         padding-top: 10px;
         border-bottom: 0;
+    }
+    .slots-table tr.machine-mobile-card td[id^="a_"]::before {
+        display: none;
     }
     .slot-name-container {
         gap: 8px;
@@ -859,6 +866,18 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
     .slot-name-row {
         align-items: center;
         gap: 10px;
+    }
+    .slot-name-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+        flex: 0 0 auto;
+        align-self: center;
+    }
+    .slot-name-actions .btn-edit {
+        margin-left: 0;
+        align-self: center;
     }
     .slot-check-inline-wrap {
         display: inline-flex;
@@ -869,6 +888,23 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
     }
     .slot-check-inline {
         margin: 0;
+    }
+    .slot-mobile-action-trigger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        min-width: 32px;
+        min-height: 32px;
+        padding: 0;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+        color: #2563eb;
+        font-size: 22px;
+        line-height: 1;
+        align-self: center;
+        cursor: pointer;
     }
     .slot-name-text,
     .slot-name-text strong {
@@ -891,18 +927,53 @@ details.menu-panel summary { cursor:pointer; font-weight:bold; color:#8cc8ff; pa
         line-height: 1.4;
         word-break: break-word;
     }
+    .slot-mobile-quick-charge {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        margin-bottom: 8px;
+    }
+    .slot-mobile-quick-input {
+        flex: 1 1 auto;
+        width: auto !important;
+        max-width: none;
+        min-width: 0;
+        min-height: 40px;
+        font-size: 15px;
+    }
+    .slot-mobile-quick-send {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 88px;
+        min-height: 40px;
+        padding: 8px 14px !important;
+        font-size: 13px !important;
+        white-space: nowrap;
+    }
+    .slots-table tr.machine-mobile-card td input.slot-mobile-quick-input[type="text"] {
+        width: auto !important;
+        max-width: none !important;
+        flex: 1 1 auto;
+    }
+    .slots-table tr.machine-mobile-card td button.slot-mobile-quick-send {
+        width: auto !important;
+        flex: 0 0 auto !important;
+        min-width: 88px;
+        padding: 8px 14px !important;
+    }
     .slots-table tr.machine-mobile-card td input[type="text"] {
         margin: 0;
-        min-height: 40px;
-        padding: 8px 10px;
-        font-size: 14px;
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 16px;
     }
     .slots-table tr.machine-mobile-card td button:not(.btn-edit) {
         width: 100%;
         margin: 0 !important;
-        min-height: 40px;
-        padding: 8px 10px;
-        font-size: 13px;
+        min-height: 44px;
+        padding: 8px 12px;
+        font-size: 14px;
     }
     .slots-table tr.machine-mobile-card td .btn-edit {
         align-self: flex-start;

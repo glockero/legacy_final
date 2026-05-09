@@ -761,6 +761,7 @@ function prepararAccionesMobile() {
     const mobile = window.innerWidth <= 640;
     document.querySelectorAll('#tabla-esclavos td[id^="a_"]').forEach(td => {
         const slot = td.id.replace('a_', '');
+        const tieneAccionesCompletas = /abrirModalCargas|abrirModalLog|abrirModalContadores|mostrarInfo|quitar\(|REBOOT/.test(td.innerHTML);
         if(!td.dataset.fullActions && !td.dataset.mobileButton) td.dataset.fullActions = td.innerHTML;
         if(!mobile) {
             if(td.dataset.fullActions && td.dataset.mobileButton === '1') td.innerHTML = td.dataset.fullActions;
@@ -768,10 +769,13 @@ function prepararAccionesMobile() {
             td.dataset.fullActions = td.innerHTML;
             return;
         }
+        if(td.dataset.mobileButton === '1' && td.querySelector('.slot-mobile-quick-charge')) {
+            return;
+        }
         if(td.innerHTML.includes('abrirAccionesDesdeFila')) {
             return;
         }
-        td.dataset.fullActions = td.innerHTML;
+        if(tieneAccionesCompletas) td.dataset.fullActions = td.innerHTML;
 
         let tempDiv = document.createElement('div');
         tempDiv.innerHTML = td.dataset.fullActions;
@@ -781,25 +785,19 @@ function prepararAccionesMobile() {
         let cargarHtml = "";
         if(cargarInput && cargarBtn) {
             let inp = cargarInput.cloneNode(true);
-            inp.style.width = "auto";
-            inp.style.flex = "2"; 
-            inp.style.minWidth = "0"; 
+            inp.classList.add('slot-mobile-quick-input');
             
             let btn = cargarBtn.cloneNode(true);
-            btn.style.flex = "1";
-            btn.style.width = "auto";
-            btn.style.fontSize = "20px"; 
+            btn.classList.add('slot-mobile-quick-send');
             
             cargarHtml = `
-                <div style="display:flex; gap:8px; margin-bottom:10px; width:100%;">
+                <div class="slot-mobile-quick-charge">
                     ${inp.outerHTML}
                     ${btn.outerHTML}
                 </div>`;
         }
 
-        td.innerHTML = `
-            ${cargarHtml}
-            <button class="btn-info" style="width:100%; font-weight:bold; background:#2563eb;" onclick="abrirAccionesDesdeFila(${slot})">ACCIONES</button>`;
+        td.innerHTML = `${cargarHtml}`;
         td.dataset.mobileButton = '1';
     });
 }
@@ -867,6 +865,47 @@ function refinarCardsSlotsMobile() {
     });
 
     document.querySelectorAll('#tabla-esclavos tr[id^="fila_"]').forEach(tr => {
+        const nameTd = tr.querySelector('td[id^="n_"]');
+        if(!nameTd) return;
+        const row = nameTd.querySelector('.slot-name-row');
+        if(!row) return;
+
+        let actionsGroup = row.querySelector('.slot-name-actions');
+        let editBtn = row.querySelector('.btn-edit');
+        if(!mobile) {
+            if(actionsGroup) {
+                if(editBtn && actionsGroup.contains(editBtn)) row.appendChild(editBtn);
+                actionsGroup.remove();
+            }
+            return;
+        }
+
+        if(!actionsGroup) {
+            actionsGroup = document.createElement('div');
+            actionsGroup.className = 'slot-name-actions';
+            row.appendChild(actionsGroup);
+        }
+
+        let actionBtn = actionsGroup.querySelector('.slot-mobile-action-trigger');
+        if(!actionBtn) {
+            actionBtn = document.createElement('button');
+            actionBtn.type = 'button';
+            actionBtn.className = 'slot-mobile-action-trigger';
+            actionBtn.title = 'Acciones';
+            actionBtn.innerHTML = '⚙️';
+            actionBtn.addEventListener('click', () => {
+                const slot = tr.id.replace('fila_', '');
+                abrirAccionesDesdeFila(slot);
+            });
+            actionsGroup.appendChild(actionBtn);
+        }
+
+        if(editBtn && editBtn.parentElement !== actionsGroup) {
+            actionsGroup.appendChild(editBtn);
+        }
+    });
+
+    document.querySelectorAll('#tabla-esclavos tr[id^="fila_"]').forEach(tr => {
         const stateTd = tr.querySelector('td[id^="s_"]');
         const eventTd = tr.querySelector('td[id^="e_"]');
         if(stateTd) {
@@ -899,8 +938,7 @@ function abrirAccionesDesdeFila(slot) {
     const actionsCell = document.getElementById('a_' + slot);
     if(!row || !actionsCell) return;
     const nameCell = document.getElementById('n_' + slot);
-    const stateCell = document.getElementById('s_' + slot);
-    const eventCell = document.getElementById('e_' + slot);
+    const nombreSlot = nameCell?.querySelector('strong')?.textContent.trim() || slot;
     
     let tempDiv = document.createElement('div');
     tempDiv.innerHTML = actionsCell.dataset.fullActions || actionsCell.innerHTML;
@@ -910,17 +948,24 @@ function abrirAccionesDesdeFila(slot) {
     let btn = tempDiv.querySelector(`button[onclick*="sendCmd"][onclick*="cmd_${slot}"]`);
     if(btn) btn.remove();
 
-    let actions = tempDiv.innerHTML;
-    actions = actions.replace('display:flex;', 'display:grid; grid-template-columns:1fr 1fr; gap:10px;');
+    const actionButtons = Array.from(tempDiv.querySelectorAll('button'));
+    actionButtons.forEach((actionBtn, idx) => {
+        actionBtn.style.width = '100%';
+        actionBtn.style.margin = '0';
+        actionBtn.style.minWidth = '0';
+        actionBtn.style.whiteSpace = 'normal';
+
+        if(actionButtons.length === 5) {
+            if(idx < 3) actionBtn.style.gridColumn = 'span 2';
+            else actionBtn.style.gridColumn = 'span 3';
+        }
+    });
+
+    const actions = actionButtons.map(actionBtn => actionBtn.outerHTML).join('');
     
-    document.getElementById('modal-title').innerText = "Acciones de maquina";
+    document.getElementById('modal-title').innerText = `Acciones - ${nombreSlot}`;
     document.getElementById('modal-content').innerHTML = `
-        <div class="dash-grid" style="margin-top:0; margin-bottom:15px;">
-            <div class="dash-card"><strong>SLOT</strong><span>${nameCell ? nameCell.textContent.trim() : slot}</span></div>
-            <div class="dash-card"><strong>Estado</strong><span>${stateCell ? stateCell.textContent.trim() : '-'}</span></div>
-            <div class="dash-card"><strong>Evento</strong><span>${eventCell ? eventCell.textContent.trim() : '-'}</span></div>
-        </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">${actions}</div>`;
+        <div style="display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:10px; align-items:stretch;">${actions}</div>`;
     document.getElementById('modal-overlay').style.display = 'flex';
 }
 
@@ -1257,13 +1302,13 @@ async function tick() {
         
         let actHtml = `<div style="display:flex; gap:5px; flex-wrap:wrap; align-items:center;">
                  <input type="text" id="cmd_${e.slot}" style="${styleInp}" placeholder="$" ${disInp}> 
-                 <button onclick="sendCmd('${e.id}','cmd_${e.slot}')" ${disBtn} style="${styleBtn}">💸</button> 
+                 <button onclick="sendCmd('${e.id}','cmd_${e.slot}')" ${disBtn} style="${styleBtn}">Cargar</button> 
                  <button onclick="abrirModalCargas(${e.slot}, '${e.id}', '${e.nombre}')" title="Auditoria de cargas" style="border:none; padding:8px 12px; border-radius:4px; font-weight:bold; cursor:pointer; background:#17a2b8; color:white;">Auditoria</button>
                  <button class="btn-download" onclick="abrirModalLog(${e.slot}, '${e.id}', '${e.nombre}')" title="Ver log del slot">Log</button>
                  <button class="btn-info" style="background:#6f42c1;" onclick="abrirModalContadores('${e.id}', ${e.slot}, '${e.nombre}')" title="Ver contadores de la máquina">Contadores</button>
-                 <button class="btn-info" onclick="mostrarInfo('${e.id}', '${e.ip}', '${e.mac}', ${e.online})">ℹ️</button>
-                 ${d.rol==='admin' && e.online ? `<button class="btn-reboot" onclick="sendCmd('${e.id}','REBOOT')">🔄</button>` : ''}
-                 ${d.rol==='admin' && !e.online ? `<button class="btn-quitar" onclick="quitar(${e.slot})">🗑️ Quitar</button>` : ''}
+                 <button class="btn-info" onclick="mostrarInfo('${e.id}', '${e.ip}', '${e.mac}', ${e.online})">Info</button>
+                 ${d.rol==='admin' && e.online ? `<button class="btn-reboot" onclick="sendCmd('${e.id}','REBOOT')">Reiniciar</button>` : ''}
+                 ${d.rol==='admin' && !e.online ? `<button class="btn-quitar" onclick="quitar(${e.slot})">Quitar</button>` : ''}
                </div>`;
 
         if(!tr) {
